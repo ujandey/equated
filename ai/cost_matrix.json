@@ -1,0 +1,42 @@
+{
+  "models": {
+    "groq-llama-70b": {
+      "input_per_1k": 0.000,
+      "output_per_1k": 0.000,
+      "avg_input_tokens": 500,
+      "avg_output_tokens": 800,
+      "avg_cost_per_call": 0.000
+    },
+    "deepseek-v3": {
+      "input_per_1k": 0.00027,
+      "output_per_1k": 0.00110,
+      "avg_input_tokens": 600,
+      "avg_output_tokens": 1000,
+      "avg_cost_per_call": 0.00126
+    },
+    "deepseek-r1": {
+      "input_per_1k": 0.00055,
+      "output_per_1k": 0.00219,
+      "avg_input_tokens": 700,
+      "avg_output_tokens": 1500,
+      "avg_cost_per_call": 0.00367
+    },
+    "sympy": {
+      "input_per_1k": 0.0,
+      "output_per_1k": 0.0,
+      "avg_input_tokens": 0,
+      "avg_output_tokens": 0,
+      "avg_cost_per_call": 0.0
+    }
+  },
+  "budgets": {
+    "daily_usd": 5.0,
+    "monthly_usd": 50.0,
+    "target_cost_per_solve": 0.001
+  },
+  "optimization": {
+    "cache_hit_target": 0.50,
+    "groq_free_daily_requests": 14400,
+    "prompt_compression_target": 0.30
+  }
+}

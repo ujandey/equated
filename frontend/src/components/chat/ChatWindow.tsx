@@ -1,0 +1,184 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
+import { MessageBubble } from "./MessageBubble";
+import { SolutionCard } from "./SolutionCard";
+import { useChat } from "@/hooks/useChat";
+import { Header } from "@/components/layout/Header";
+import type { Message } from "@/types/message";
+import { 
+  Sparkles, Send, Mic, Lightbulb, CheckCircle2, 
+  BookOpen, Book, AlertTriangle, LineChart 
+} from "lucide-react";
+
+export function ChatWindow() {
+  const [input, setInput] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { messages, isLoading, sendMessage } = useChat();
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    const query = input;
+    setInput("");
+    await sendMessage(query);
+  };
+
+  const setPrompt = (prompt: string) => {
+    setInput(prompt);
+  };
+
+  return (
+    <>
+      <Header />
+      
+      <div className="flex w-full h-full pt-16">
+        {/* Central Canvas (Study Area) */}
+        <section className="flex-1 overflow-y-auto px-4 md:px-12 py-8 scroll-smooth pb-48 no-scrollbar">
+          {messages.length === 0 && (
+            <div className="text-center text-on-surface/50 mt-20 max-w-lg mx-auto animate-fade-in">
+              <div className="w-16 h-16 rounded-2xl bg-surface-glass border border-border-glass mx-auto mb-6 flex items-center justify-center">
+                <Sparkles className="w-10 h-10 text-primary" />
+              </div>
+              <h3 className="text-2xl font-headline text-on-surface mb-2">How can I help you today?</h3>
+              <p className="font-body text-sm">Ask a complex STEM question or type an equation to get started.</p>
+            </div>
+          )}
+
+          <div className="space-y-12">
+            {messages.map((msg: Message) => (
+              <div key={msg.id} className="animate-slide-up w-full">
+                {msg.role === "assistant" && msg.metadata?.structured ? (
+                  <div className="max-w-3xl mx-auto glass-panel border-t-[3px] border-primary rounded-b-xl shadow-2xl relative overflow-hidden">
+                    <div className="p-6 md:p-10">
+                      <SolutionCard solution={msg.metadata.structured} />
+                    </div>
+                    {/* Abstract Decorative Pattern */}
+                    <div className="absolute top-0 right-0 w-32 h-32 opacity-10 pointer-events-none">
+                      <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary to-transparent"></div>
+                    </div>
+                  </div>
+                ) : (
+                  <MessageBubble message={msg} />
+                )}
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {isLoading && (
+            <div className="flex justify-center animate-pulse pt-4">
+              <div className="px-4 py-2 bg-surface-glass border border-border-glass rounded-full flex items-center gap-2 text-[0.75rem] text-on-surface/40 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/60"></span>
+                COMPUTING_RESPONSE...
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Context Rail (Right Panel) */}
+        <aside className="w-80 bg-background/50 border-l border-border-glass p-6 overflow-y-auto hidden xl:block pb-48 no-scrollbar">
+          <div className="space-y-8">
+            {/* Formula Card Placeholder */}
+            <div className="group">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">Key Formula</span>
+                <Book className="w-4 h-4 text-primary" />
+              </div>
+              <div className="glass-panel p-5 rounded-2xl group-hover:border-primary/40 transition-all">
+                <h4 className="font-headline text-lg mb-2 text-on-surface">Relevant Formula</h4>
+                <code className="block font-mono text-xs text-primary bg-background/50 p-2 rounded mb-3">
+                  Pending context...
+                </code>
+                <p className="text-[11px] font-body text-slate-400">
+                  Formula will appear here based on the current active derivation.
+                </p>
+              </div>
+            </div>
+
+            {/* Mistake Alert Box Placeholder */}
+            <div className="bg-error/10 border border-error/20 p-5 rounded-2xl">
+              <div className="flex items-center gap-2 mb-3 text-error">
+                <AlertTriangle className="w-5 h-5" />
+                <span className="font-label text-xs font-bold uppercase tracking-tighter">Mistake Alert</span>
+              </div>
+              <p className="font-body text-sm text-on-surface-variant leading-relaxed">
+                Connect your past submissions to enable personalized cognitive warnings.
+              </p>
+            </div>
+
+            {/* Visualization Placeholder */}
+            <div className="rounded-2xl glass-panel h-48 flex items-center justify-center relative overflow-hidden group">
+              <div className="absolute inset-0 w-full h-full bg-surface-glass opacity-20 group-hover:scale-110 transition-transform duration-700" />
+              <div className="relative z-10 text-center px-4">
+                <LineChart className="w-8 h-8 text-primary mx-auto mb-2 opacity-50" />
+                <span className="text-[10px] font-mono text-slate-400 uppercase">Live Projection Buffer</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* Bottom Shell (Navigation & Input) */}
+      <div className="absolute bottom-0 left-0 right-0 z-50 pointer-events-none">
+        {/* Hint Strip */}
+        <div className="flex justify-center mb-4 pointer-events-auto">
+          <nav className="flex items-center gap-1 bg-surface-glass backdrop-blur-xl rounded-full p-1 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] border border-border-glass">
+            <button className="bg-primary text-background rounded-full px-4 py-1.5 font-mono text-[10px] uppercase tracking-widest flex items-center gap-2">
+              <Lightbulb className="w-3 h-3" />
+              Hint mode
+            </button>
+            <button className="text-slate-400 px-4 py-1.5 font-mono text-[10px] uppercase tracking-widest flex items-center gap-2 hover:text-white transition-colors">
+              <CheckCircle2 className="w-3 h-3" />
+              Verify mode
+            </button>
+            <button className="text-slate-400 px-4 py-1.5 font-mono text-[10px] uppercase tracking-widest flex items-center gap-2 hover:text-white transition-colors">
+              <BookOpen className="w-3 h-3" />
+              Explain only
+            </button>
+          </nav>
+        </div>
+
+        {/* Sticky Input Area */}
+        <div className="max-w-4xl mx-auto px-4 md:px-8 pb-8 pointer-events-auto">
+          <form 
+            onSubmit={handleSubmit}
+            className="relative glass-panel rounded-xl shadow-2xl overflow-hidden focus-within:ring-2 ring-primary/50 transition-all flex items-center"
+          >
+            <input 
+              className="w-full bg-transparent border-none text-on-surface placeholder:text-slate-500 focus:ring-0 py-5 pl-6 pr-24 outline-none font-body text-base md:text-lg h-full" 
+              placeholder="Describe your next problem or ask for clarification..." 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={isLoading}
+            />
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+              <button type="button" className="text-slate-500 hover:text-primary transition-colors hidden sm:block">
+                <Mic className="w-5 h-5" />
+              </button>
+              <button 
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className="bg-primary w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center text-background hover:scale-110 active:scale-95 transition-all neon-glow disabled:opacity-50 disabled:hover:scale-100"
+              >
+                <Send className="w-5 h-5 ml-0.5" />
+              </button>
+            </div>
+          </form>
+
+          {/* Prompt Suggestions */}
+          {messages.length === 0 && (
+            <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-2 justify-center opacity-70 hover:opacity-100 transition-opacity">
+              <button onClick={() => setPrompt("Explain Stokes Theorem")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">Explain Stokes Theorem</button>
+              <button onClick={() => setPrompt("Evaluate the triple integral of x^2 + y^2")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">Evaluate a triple integral</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

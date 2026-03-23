@@ -1,0 +1,62 @@
+{
+  "models": {
+    "groq-llama-70b": {
+      "provider": "groq",
+      "model_id": "llama-3.3-70b-versatile",
+      "display_name": "Llama 3.3 70B (Groq)",
+      "cost_per_1k_input_tokens": 0.0,
+      "cost_per_1k_output_tokens": 0.0,
+      "max_tokens": 4096,
+      "default_temperature": 0.3,
+      "capabilities": ["general", "math", "reasoning"],
+      "tier": "free",
+      "rate_limit_rpm": 30,
+      "priority": 1
+    },
+    "deepseek-v3": {
+      "provider": "deepseek",
+      "model_id": "deepseek-chat",
+      "display_name": "DeepSeek V3",
+      "cost_per_1k_input_tokens": 0.00027,
+      "cost_per_1k_output_tokens": 0.0011,
+      "max_tokens": 8192,
+      "default_temperature": 0.2,
+      "capabilities": ["general", "math", "reasoning", "vision"],
+      "tier": "standard",
+      "rate_limit_rpm": 60,
+      "priority": 2
+    },
+    "deepseek-r1": {
+      "provider": "deepseek",
+      "model_id": "deepseek-reasoner",
+      "display_name": "DeepSeek R1 (Reasoning)",
+      "cost_per_1k_input_tokens": 0.00055,
+      "cost_per_1k_output_tokens": 0.00219,
+      "max_tokens": 8192,
+      "default_temperature": 0.1,
+      "capabilities": ["advanced_reasoning", "math", "proof"],
+      "tier": "premium",
+      "rate_limit_rpm": 30,
+      "priority": 3
+    },
+    "sympy": {
+      "provider": "local",
+      "model_id": "sympy-engine",
+      "display_name": "SymPy Math Engine",
+      "cost_per_1k_input_tokens": 0.0,
+      "cost_per_1k_output_tokens": 0.0,
+      "max_tokens": 0,
+      "default_temperature": 0.0,
+      "capabilities": ["symbolic_math", "algebra", "calculus", "matrix"],
+      "tier": "free",
+      "rate_limit_rpm": 0,
+      "priority": 0
+    }
+  },
+  "routing_rules": {
+    "default_model": "groq-llama-70b",
+    "escalation_chain": ["groq-llama-70b", "deepseek-v3", "deepseek-r1"],
+    "math_only_model": "sympy",
+    "similarity_threshold": 0.92
+  }
+}

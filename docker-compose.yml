@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  # ── Frontend (Next.js) ──────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env.example
+    environment:
+      - NEXT_INTERNAL_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - equated-network
+
+  # ── Backend (FastAPI) ───────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env.example
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - equated-network
+
+  # ── Redis (Cache + Queue) ──────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - equated-network
+
+  # ── PostgreSQL ─────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: equated
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    networks:
+      - equated-network
+
+  # ── Celery Worker ──────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A workers.worker worker --loglevel=info
+    env_file:
+      - ./backend/.env.example
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - equated-network
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  equated-network:
+    driver: bridge

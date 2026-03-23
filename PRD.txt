@@ -1,0 +1,244 @@
+EQUATED
+AI STEM Learning Assistant
+Product Requirements Document  —  Version 2.0
+
+This document defines the complete product scope, architecture, and feature roadmap for Equated — a multi-engine AI platform for STEM education.
+
+1. Overview
+Equated is an AI-powered STEM learning assistant designed for school and engineering students. The platform solves academic problems while teaching the reasoning behind each solution.
+Most existing tools simply return answers or short explanations. Students struggle because they do not see how the solution progresses step by step. Equated addresses this gap by combining multi-model AI routing, symbolic math computation, solution verification, and structured pedagogical explanations — all within a single platform built for accessibility.
+The product differentiator is clear:
+Not a generic AI chatbot
+A STEM-specific problem solving platform with verification, structured explanations, and multi-engine solving
+The platform launches as a focused MVP and evolves through staged development into a full AI learning environment.
+
+2. Problem Statement
+Students studying STEM subjects face a recurring set of difficulties:
+Complex multi-step problem solving in physics, mathematics, and engineering
+Existing tools skip steps or assume prior knowledge
+Students cannot identify exactly where their own reasoning went wrong
+Private tutoring is unaffordable for most students
+Study material is scattered across notes, PDFs, and assignments
+Equated is designed to function as an always-available personal tutor — solving problems, explaining reasoning, and guiding students toward conceptual understanding.
+
+3. Core Product Concept
+The system accepts STEM problems in multiple input formats and produces structured, pedagogically useful responses.
+3.1 Accepted Inputs
+Typed questions
+Mathematical expressions (including LaTeX)
+Images of problems (via OCR)
+Uploaded documents
+3.2 Output Structure
+Every solution follows a consistent format:
+Problem Interpretation
+Concept Used
+Step 1  →  Formula / Rule
+Step 2  →  Formula / Rule
+Step 3  →  Explanation
+Final Answer
+Quick Summary
+(Optional) Alternative Method
+(Optional) Common Mistakes
+
+4. MVP Scope
+The first version focuses on one core feature: the AI Step-by-Step Problem Solver.
+4.1 MVP Capabilities
+Accept typed STEM questions
+Parse and normalize question format (Problem Parser)
+Route to appropriate AI model via Model Router
+Check Question Cache before calling AI
+Generate structured, step-by-step explanations
+Run symbolic computation via Math Engine
+Verify answer via Solution Verification Engine
+Return final structured response to student
+Even in the MVP, all core architecture components are present. This ensures the platform is production-grade from day one and avoids costly rewrites.
+4.2 MVP Architecture Flow
+User Input
+  → Problem Parser (OCR / LaTeX / normalization)
+  → Question Cache (vector similarity check)
+      → Cache Hit  → Return stored solution
+      → Cache Miss → AI Model Router
+                       → Math Engine (SymPy)
+                       → Solution Verification Engine
+                       → Explanation Generator
+  → Response to User
+
+5. System Architecture
+The platform follows a modular, cloud-based architecture designed for scalability, cost control, and model-agnosticism.
+5.1 AI Model Router
+The system does not assume a single AI model. A Model Router analyzes each request and selects the most appropriate model based on task type, cost, and required reasoning depth.
+
+
+Benefits: up to 80% cost reduction, improved performance, and full flexibility to swap or add models as the market evolves.
+The architecture is fully model-agnostic, allowing integration of DeepSeek, Mistral, OpenAI, Gemini, Claude, and future open models without platform lock-in.
+5.2 Problem Parser
+Students submit problems in inconsistent formats. The Problem Parser normalizes all inputs before routing.
+OCR engine for image-based problems
+LaTeX / math expression parser
+Subject identification (math, physics, chemistry, engineering)
+Question format normalization
+5.3 Question Cache (Vector Search)
+30–60% of student questions are repeated. Before invoking the AI pipeline, every question is checked against a vector similarity cache.
+User question
+  → Generate embedding
+  → Search vector database (Supabase Vector / Pinecone)
+  → Similarity threshold met → Return cached solution
+  → No match → Proceed to AI pipeline
+This single component can reduce API costs by more than half at scale.
+5.4 Math Computation Engine
+AI language models should not perform numeric or symbolic calculations directly. The Math Engine handles all mathematical computation.
+Symbolic algebra and simplification
+Calculus (derivatives, integrals)
+Equation solving
+Matrix operations
+Primary tool: SymPy (open source). Optional: Wolfram Alpha API for complex cases.
+LLM interprets problem
+  → Converts to symbolic expression
+  → Math Engine computes result
+  → LLM explains each step
+5.5 Solution Verification Engine
+Every solution is verified before being returned to the student. This is critical for platform credibility.
+Math engine checks computational correctness
+Cross-model comparison for ambiguous problems
+Inconsistency detection triggers regeneration
+Model generates solution
+  → Math engine verifies
+  → Mismatch detected → Regenerate
+  → Verified → Deliver to user
+5.6 Explanation Generator
+All solutions are rendered in a structured, student-readable format rather than raw output.
+Problem interpretation
+Concept and formula identification
+Step-by-step reasoning
+Final answer
+Quick summary
+Optional: alternative method, common mistakes
+5.7 Conversation Context Engine
+Students can ask follow-up questions about specific steps without losing context.
+Example: "Why did we use integration in Step 2?" — the system references the active solution context and responds precisely.
+Component: Conversation Context Engine, which maintains per-session solution state.
+5.8 Pre-Solved Problem Library
+Before launch, a knowledge library is pre-populated with solutions to common STEM problems:
+Core algebra and calculus problems
+Standard physics derivations
+Common engineering formulas and worked examples
+These are served instantly at zero API cost. The library grows continuously as new problems are solved and cached.
+5.9 Analytics System
+Internal analytics track platform health and learning patterns:
+Most frequently asked topics and subjects
+Model accuracy and failure cases
+Subjects students struggle with most
+Cache hit rate and cost-per-solve metrics
+These insights drive model improvements, content strategy, and product prioritization.
+
+6. Planned Features (Staged Development)
+6.1 Concept Explanations
+The AI explains the underlying theory behind each step.
+Concept: Capacitors in Parallel
+Rule: C_total = C1 + C2
+Why: Nodes share the same voltage, so capacitances add directly.
+6.2 Hint-Based Learning Mode
+Instead of revealing the full solution immediately, the system guides the student progressively.
+Hint 1 → Identify the circuit configuration
+Hint 2 → Recall the rule for parallel capacitors
+Step → Apply the formula
+Explanation → Full derivation
+This mimics the behavior of a human tutor and promotes active learning.
+6.3 Student Mistake Detection
+Students submit their own attempted solutions. The system analyzes each step and identifies specific errors.
+Error in Step 3:
+  Capacitors were treated as series.
+  However, they share the same nodes → they are in parallel.
+  Correct formula: C_total = C1 + C2
+6.4 Visualizations
+Certain STEM topics require visual representation. Future versions will generate:
+Circuit diagrams
+Function graphs and plots
+Free-body diagrams
+Geometric constructions
+6.5 Practice Problem Generator
+The AI generates additional practice questions based on a topic and difficulty level.
+Topic: Capacitors in Series
+Difficulty: Medium
+Generated Problems: 5
+6.6 AI Study Tools
+Additional learning utilities planned for later stages:
+Cheat sheet generator
+Lecture summary generator
+Flashcard generation
+Quiz creation
+
+7. Technology Stack
+Frontend
+React or Next.js
+Hosted on Vercel or Netlify
+Backend
+Python with FastAPI
+Hosted on Render or Railway
+AI Models
+Model Router selecting from: DeepSeek, Mistral, Groq, OpenAI, Claude (model-agnostic)
+Math Engine
+SymPy for symbolic computation
+Optional: Wolfram Alpha API
+Vector Cache
+Supabase Vector, Pinecone, or Weaviate for embedding-based question cache
+Database
+Supabase or Firebase
+OCR / Parsing
+OCR engine for image inputs
+Math expression parser for LaTeX
+
+8. Monetization & Cost Control
+The platform is designed to remain free or very low-cost for students, funded through a combination of freemium revenue, minimal non-intrusive ads, and aggressive cost management.
+8.1 Free Tier
+5–7 problem solves per day
+Access to core solver and explanation features
+Question cache benefits all users (free and paid)
+8.2 Credit Packs
+Users can purchase credit packs for additional solves beyond the free daily limit:
+
+
+8.3 Usage Manager
+A dedicated Usage Manager component handles all credit tracking and limits:
+Tracks daily solve count per user
+Applies free tier limits
+Deducts credits for paid usage
+Surfaces usage stats to the user
+8.4 Minimal Ad System
+Non-intrusive banner ads subsidize free users without degrading experience:
+One small banner ad per solution page
+No popups, no interstitials, no forced video ads
+Ad revenue offsets API costs for free-tier users
+8.5 Cost Control Policies
+Cheap models used first; upgrade only when task requires it
+Output tokens limited by default; expansions on demand
+Question cache prevents redundant API calls (target: 30–60% cache hit rate)
+Pre-solved library serves zero-cost answers for common problems
+Target cost per solve: $0.0005 – $0.001
+8.6 Educational Credits
+Cloud platform credits for student developers reduce infrastructure costs during early development:
+Cloud hosting credits (AWS, GCP, Azure startup programs)
+AI developer credits (Anthropic, OpenAI, Google)
+Startup acceleration programs
+
+9. Development Roadmap
+Stage 1 — MVP
+Core solver with full architecture: Problem Parser, Model Router, Question Cache, Math Engine, Verification Engine, Explanation Generator.
+Stage 2 — Guided Learning
+Hint-based mode, interactive steps, Conversation Context Engine.
+Stage 3 — Visualizations
+Circuit diagrams, function graphs, free-body diagrams.
+Stage 4 — Study Tools
+Flashcards, lecture summaries, practice problem generation.
+Stage 5 — Full Platform
+Integrated AI learning environment for STEM: mistake detection, analytics dashboard, expanded pre-solved library, full study suite.
+
+10. Long-Term Vision
+The long-term goal is for Equated to function as an AI operating system for STEM students — not a homework solver, but a complete learning environment.
+The platform helps students:
+Understand concepts deeply, not just copy answers
+Practice problems at the right difficulty level
+Identify and fix gaps in their own reasoning
+Revise material efficiently before exams
+Access quality STEM education regardless of access to tutors or resources
+The emphasis remains on education and conceptual understanding. Every product decision — structured explanations, verification, hint-based modes, mistake detection — serves this mission.
