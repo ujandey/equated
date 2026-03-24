@@ -27,9 +27,8 @@ class Settings(BaseSettings):
     SUPABASE_SECRET_KEY: str = ""
 
     # ── Auth / JWT ──────────────────────────
-    SUPABASE_JWT_SECRET: str = ""           # Supabase JWT signing secret (from project settings)
-    JWT_ALGORITHM: str = "HS256"            # JWT signing algorithm
-    JWT_ISSUER: str = ""                    # Expected issuer in JWT claims
+    # JWT verification uses JWKS (RS256 public keys) fetched automatically
+    # from {SUPABASE_URL}/auth/v1/.well-known/jwks.json — no secret needed.
 
     # ── Redis ───────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -29,7 +29,7 @@ class AuthService:
         Returns None if token is invalid.
         """
         # Primary: local JWT validation (sub-millisecond)
-        if settings.SUPABASE_JWT_SECRET:
+        if jwt_validator.is_configured:
             user_id = jwt_validator.get_user_id(token)
             if user_id:
                 logger.debug("auth_local_jwt_ok", user_id=user_id[:8])

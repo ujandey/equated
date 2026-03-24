@@ -312,9 +312,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key_here
 SUPABASE_SECRET_KEY=your_secret_key_here
 
-# JWT & Security
-JWT_SECRET_KEY=your-very-secret-jwt-key
-JWT_ALGORITHM=HS256
+# JWT verification is automatic via JWKS — no secret key needed
 JWT_EXPIRATION_HOURS=24
 
 # Razorpay (optional)
@@ -996,8 +994,8 @@ redis-server
 
 #### Issue: `JWTClaimsError` or authentication issues
 **Solution**:
-1. Generate new JWT secret: `openssl rand -hex 32`
-2. Update `JWT_SECRET_KEY` in `backend/.env`
+1. JWT verification is now automatic via JWKS public keys
+2. Ensure `SUPABASE_URL` is correct in `backend/.env`
 3. Clear browser cookies
 4. Re-login
 
