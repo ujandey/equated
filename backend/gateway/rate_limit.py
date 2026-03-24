@@ -22,8 +22,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health checks
-        if request.url.path.startswith("/api/health"):
+        # Skip rate limiting for CORS preflight requests
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        # Skip rate limiting for health checks and metrics
+        if request.url.path.startswith("/api/health") or request.url.path == "/metrics":
             return await call_next(request)
 
         identifier = self._get_identifier(request)

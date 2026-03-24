@@ -19,6 +19,9 @@ PUBLIC_PATHS = {
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/metrics",
+    "/api/v1/credits/packs",
+    "/api/v1/credits/webhook",
 }
 
 

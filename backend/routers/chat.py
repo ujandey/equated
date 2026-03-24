@@ -28,6 +28,7 @@ class CreateSessionRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
     stream: bool = False
+    session_id: str | None = None
 
 
 class UpdateSessionRequest(BaseModel):
@@ -139,7 +140,6 @@ async def get_messages(
 @router.post("/chat/stream")
 async def stream_chat(
     req: SendMessageRequest,
-    session_id: str | None = None,
     user_id: str = Depends(get_current_user),
 ):
     """
@@ -155,6 +155,7 @@ async def stream_chat(
     """
     # 1. Validate input
     cleaned = input_validator.validate_query(req.content)
+    session_id = req.session_id
 
     # 2. Get or create session
     if not session_id:

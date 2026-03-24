@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useChatStore } from "@/store/chatStore";
+import { useCredits } from "@/hooks/useCredits";
 import { History, Brain, Sigma, FolderOpen, Hexagon, Menu } from "lucide-react";
 
 interface Session {
@@ -17,6 +18,7 @@ export function Sidebar() {
   const [isLoading, setIsLoading] = useState(true);
   
   const { sessionId, setSessionId, clearMessages, addMessage } = useChatStore();
+  const { balance } = useCredits();
 
   useEffect(() => {
     fetchSessions();
@@ -135,7 +137,7 @@ export function Sidebar() {
 
         <div className="px-6 pt-4 flex items-center gap-2 text-slate-500 text-[10px] font-mono border-t border-border-glass mt-auto bg-background">
           <Hexagon className="w-4 h-4 text-primary" />
-          <span>⬡ 1,240 credits</span>
+          <span>⬡ {balance?.credits ?? "—"} credits</span>
         </div>
       </aside>
 

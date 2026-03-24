@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     # ── Database ────────────────────────────
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/equated"
     SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_PUBLISHABLE_KEY: str = ""
+    SUPABASE_SECRET_KEY: str = ""
 
     # ── Auth / JWT ──────────────────────────
     SUPABASE_JWT_SECRET: str = ""           # Supabase JWT signing secret (from project settings)

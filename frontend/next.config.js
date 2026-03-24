@@ -3,9 +3,6 @@ const nextConfig = {
   // Enable React strict mode for development
   reactStrictMode: true,
 
-  // Output standalone for Docker builds
-  output: "standalone",
-
   // Backend API proxy to avoid CORS in development
   async rewrites() {
     const backendUrl = process.env.NEXT_INTERNAL_BACKEND_URL || "http://localhost:8000";

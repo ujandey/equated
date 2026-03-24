@@ -309,8 +309,8 @@ OPENAI_API_KEY=your_openai_key_here
 
 # Supabase
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_supabase_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key_here
+SUPABASE_SECRET_KEY=your_secret_key_here
 
 # JWT & Security
 JWT_SECRET_KEY=your-very-secret-jwt-key
@@ -332,7 +332,7 @@ ENVIRONMENT=development
 ```bash
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key_here
 
 # Backend API
 NEXT_PUBLIC_API_URL=http://localhost:8000
