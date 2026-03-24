@@ -19,14 +19,14 @@ logger = structlog.get_logger("equated.services.jwt_validator")
 
 class JWTValidator:
     """
-    Verifies Supabase JWTs using RS256 with JWKS public keys.
+    Verifies Supabase JWTs using RS256/ES256 with JWKS public keys.
 
     Public keys are fetched from:
         {SUPABASE_URL}/auth/v1/.well-known/jwks.json
 
     Verification steps:
       1. Fetch signing key from JWKS endpoint (cached)
-      2. Verify RS256 signature against public key
+      2. Verify RS256/ES256 signature against public key
       3. Verify 'exp' claim (reject expired tokens)
       4. Verify 'aud' claim matches 'authenticated'
       5. Extract 'sub' claim as user_id
@@ -59,7 +59,7 @@ class JWTValidator:
             payload = pyjwt.decode(
                 token,
                 signing_key.key,
-                algorithms=["RS256"],
+                algorithms=["RS256", "ES256"],
                 audience="authenticated",
                 options={
                     "verify_exp": True,
@@ -69,13 +69,13 @@ class JWTValidator:
             )
             return payload
         except pyjwt.ExpiredSignatureError:
-            logger.info("jwt_expired")
+            logger.error("jwt_expired")
             return None
-        except pyjwt.InvalidAudienceError:
-            logger.warning("jwt_invalid_audience")
+        except pyjwt.InvalidAudienceError as e:
+            logger.error("jwt_invalid_audience", error=str(e))
             return None
         except pyjwt.InvalidTokenError as e:
-            logger.warning("jwt_invalid", error=str(e))
+            logger.error("jwt_invalid", error=str(e))
             return None
         except Exception as e:
             logger.error("jwt_jwks_error", error=str(e))

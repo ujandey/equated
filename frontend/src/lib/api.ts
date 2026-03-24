@@ -7,7 +7,7 @@ import { supabase } from "./supabase";
 const getBaseUrl = () => {
   if (typeof window === "undefined") {
     // Server-side: need actual backend URL for SSR
-    return process.env.NEXT_INTERNAL_BACKEND_URL || "http://localhost:8000";
+    return process.env.NEXT_INTERNAL_BACKEND_URL || "http://127.0.0.1:8000";
   }
   // Client-side: use empty string so requests become relative URLs
   // routed through Next.js rewrite proxy (avoids CORS)
