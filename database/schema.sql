@@ -36,6 +36,7 @@ CREATE INDEX idx_sessions_user ON sessions(user_id, updated_at DESC);
 CREATE TABLE messages (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    block_id    UUID,
     role        VARCHAR(20)  NOT NULL,               -- 'user' | 'assistant' | 'system'
     content     TEXT         NOT NULL,
     metadata    JSONB        DEFAULT '{}',
@@ -43,6 +44,66 @@ CREATE TABLE messages (
 );
 
 CREATE INDEX idx_messages_session ON messages(session_id, created_at);
+
+-- Topic Blocks keep chat context scoped to a single problem thread.
+CREATE TABLE topic_blocks (
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id              UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    status                  VARCHAR(20)  NOT NULL DEFAULT 'active', -- 'active' | 'closed'
+    subject                 VARCHAR(50),
+    topic_label             VARCHAR(255),
+    summary                 TEXT,
+    centroid_embedding      vector(1536),
+    last_question_embedding vector(1536),
+    question_count          INTEGER      NOT NULL DEFAULT 0,
+    created_at              TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ  DEFAULT NOW()
+);
+
+CREATE INDEX idx_topic_blocks_session ON topic_blocks(session_id, updated_at DESC);
+CREATE INDEX idx_topic_blocks_embedding ON topic_blocks
+    USING ivfflat (centroid_embedding vector_cosine_ops) WITH (lists = 100);
+
+ALTER TABLE messages
+    ADD CONSTRAINT fk_messages_block
+    FOREIGN KEY (block_id) REFERENCES topic_blocks(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_messages_block ON messages(block_id, created_at);
+
+-- Every routing decision gets logged so context bugs are debuggable.
+CREATE TABLE topic_routing_decisions (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id          UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    block_id            UUID REFERENCES topic_blocks(id) ON DELETE SET NULL,
+    query_text          TEXT NOT NULL,
+    decision_type       VARCHAR(50) NOT NULL,
+    reason              VARCHAR(255) NOT NULL,
+    scores_json         JSONB NOT NULL DEFAULT '{}',
+    thresholds_json     JSONB NOT NULL DEFAULT '{}',
+    anchors_json        JSONB NOT NULL DEFAULT '{}',
+    model_versions_json JSONB NOT NULL DEFAULT '{}',
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_topic_routing_decisions_session ON topic_routing_decisions(session_id, created_at DESC);
+
+-- Long-term tutoring memory for repeated conceptual mistakes.
+CREATE TABLE user_mistake_patterns (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject         VARCHAR(50),
+    topic           VARCHAR(255) NOT NULL,
+    mistake_code    VARCHAR(100),
+    mistake_label   VARCHAR(255) NOT NULL,
+    frequency       INTEGER NOT NULL DEFAULT 1,
+    evidence_json   JSONB NOT NULL DEFAULT '[]',
+    last_seen_at    TIMESTAMPTZ DEFAULT NOW(),
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_user_mistake_patterns_unique
+    ON user_mistake_patterns(user_id, topic, mistake_label);
 
 -- ── Solves (completed problem solves) ────────────────
 CREATE TABLE solves (

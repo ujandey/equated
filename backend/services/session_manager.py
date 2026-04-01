@@ -17,6 +17,7 @@ class Message:
     id: str = field(default_factory=lambda: str(uuid4()))
     role: str = "user"           # "user" | "assistant" | "system"
     content: str = ""
+    block_id: str | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     metadata: dict = field(default_factory=dict)  # model used, tokens, cost, etc.
 
@@ -92,17 +93,24 @@ class SessionManager:
             new_title, datetime.utcnow(), session_id,
         )
 
-    async def add_message(self, session_id: str, role: str, content: str, metadata: dict = None) -> Message:
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        metadata: dict = None,
+        block_id: str | None = None,
+    ) -> Message:
         """Add a message to an existing session."""
-        msg = Message(role=role, content=content, metadata=metadata or {})
+        msg = Message(role=role, content=content, metadata=metadata or {}, block_id=block_id)
 
         from db.connection import get_db
         db = await get_db()
         await db.execute(
-            """INSERT INTO messages (id, session_id, role, content, metadata, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6)""",
-            msg.id, session_id, msg.role, msg.content,
-            json.dumps(msg.metadata), msg.created_at,
+            """INSERT INTO messages (id, session_id, block_id, role, content, metadata, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            msg.id, session_id, msg.block_id, msg.role,
+            msg.content, json.dumps(msg.metadata), msg.created_at,
         )
         # Update session timestamp
         await db.execute(
@@ -111,7 +119,12 @@ class SessionManager:
         )
         return msg
 
-    async def get_context_messages(self, session_id: str, max_messages: int = 10) -> list[dict]:
+    async def get_context_messages(
+        self,
+        session_id: str,
+        max_messages: int = 10,
+        block_id: str | None = None,
+    ) -> list[dict]:
         """
         Build context window for AI model calls.
         Returns last N messages in OpenAI-compatible format.
@@ -119,14 +132,38 @@ class SessionManager:
         from db.connection import get_db
 
         db = await get_db()
-        rows = await db.fetch(
-            """SELECT role, content FROM messages
-               WHERE session_id = $1
-               ORDER BY created_at DESC LIMIT $2""",
-            session_id, max_messages,
-        )
+        if block_id:
+            rows = await db.fetch(
+                """SELECT role, content FROM messages
+                   WHERE session_id = $1 AND block_id = $2
+                   ORDER BY created_at DESC LIMIT $3""",
+                session_id, block_id, max_messages,
+            )
+        else:
+            rows = await db.fetch(
+                """SELECT role, content FROM messages
+                   WHERE session_id = $1
+                   ORDER BY created_at DESC LIMIT $2""",
+                session_id, max_messages,
+            )
         # Reverse to chronological order
         return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+
+    async def get_last_user_message(self, session_id: str) -> str | None:
+        """Return the most recent user-authored message for a session."""
+        from db.connection import get_db
+
+        db = await get_db()
+        row = await db.fetchrow(
+            """SELECT content FROM messages
+               WHERE session_id = $1 AND role = 'user'
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            session_id,
+        )
+        if not row:
+            return None
+        return row["content"]
 
     async def get_message_count(self, session_id: str) -> int:
         """Get the total number of messages in a session."""

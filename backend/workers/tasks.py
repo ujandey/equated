@@ -79,7 +79,13 @@ def log_model_usage(user_id: str, model: str, input_tokens: int, output_tokens: 
 
 
 @celery_app.task(name="workers.tasks.save_chat_message")
-def save_chat_message(session_id: str, role: str, content: str, metadata: dict = None):
+def save_chat_message(
+    session_id: str,
+    role: str,
+    content: str,
+    metadata: dict = None,
+    block_id: str | None = None,
+):
     """Save a chat message to the DB."""
     async def _work():
         pool = await get_pool()
@@ -87,15 +93,18 @@ def save_chat_message(session_id: str, role: str, content: str, metadata: dict =
         now = datetime.now(timezone.utc)
 
         await pool.execute(
-            """INSERT INTO messages (id, session_id, role, content, metadata, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6)""",
-            msg_id, session_id, role, content,
-            json.dumps(metadata or {}), now,
+            """INSERT INTO messages (id, session_id, block_id, role, content, metadata, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            msg_id, session_id, block_id, role,
+            content, json.dumps(metadata or {}), now,
         )
         await pool.execute(
             "UPDATE sessions SET updated_at = $1 WHERE id = $2",
             now, session_id,
         )
+        if block_id:
+            from services.topic_blocks import topic_block_service
+            await topic_block_service.refresh_block_summary(block_id)
 
     run_async(_work())
 

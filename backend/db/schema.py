@@ -49,9 +49,10 @@ class Message(Base):
     __tablename__ = 'messages'
     id = Column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
     session_id = Column(UUID(as_uuid=False), ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    block_id = Column(UUID(as_uuid=False), ForeignKey('topic_blocks.id', ondelete='SET NULL'), nullable=True)
     role = Column(String(20), nullable=False)          # 'user' | 'assistant' | 'system'
     content = Column(Text, nullable=False)
-    metadata = Column(JSONB, default={})
+    metadata_json = Column("metadata", JSONB, default={})
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -78,6 +79,64 @@ class Solve(Base):
 
 Index('idx_solves_user', Solve.user_id, Solve.created_at.desc())
 Index('idx_solves_subject', Solve.subject)
+
+
+class TopicBlock(Base):
+    __tablename__ = 'topic_blocks'
+    id = Column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
+    session_id = Column(UUID(as_uuid=False), ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    status = Column(String(20), nullable=False, default='active')
+    subject = Column(String(50), nullable=True)
+    topic_label = Column(String(255), nullable=True)
+    summary = Column(Text, nullable=True)
+    centroid_embedding = Column(Vector(1536), nullable=True)
+    last_question_embedding = Column(Vector(1536), nullable=True)
+    question_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index('idx_topic_blocks_session', TopicBlock.session_id, TopicBlock.updated_at.desc())
+Index(
+    'idx_topic_blocks_embedding',
+    TopicBlock.centroid_embedding,
+    postgresql_using='ivfflat',
+    postgresql_with={'lists': 100},
+    postgresql_ops={'centroid_embedding': 'vector_cosine_ops'},
+)
+
+
+class TopicRoutingDecision(Base):
+    __tablename__ = 'topic_routing_decisions'
+    id = Column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
+    session_id = Column(UUID(as_uuid=False), ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    block_id = Column(UUID(as_uuid=False), ForeignKey('topic_blocks.id', ondelete='SET NULL'), nullable=True)
+    query_text = Column(Text, nullable=False)
+    decision_type = Column(String(50), nullable=False)
+    reason = Column(String(255), nullable=False)
+    scores_json = Column(JSONB, default={})
+    thresholds_json = Column(JSONB, default={})
+    anchors_json = Column(JSONB, default={})
+    model_versions_json = Column(JSONB, default={})
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index('idx_topic_routing_decisions_session', TopicRoutingDecision.session_id, TopicRoutingDecision.created_at.desc())
+
+
+class UserMistakePattern(Base):
+    __tablename__ = 'user_mistake_patterns'
+    id = Column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
+    user_id = Column(UUID(as_uuid=False), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    subject = Column(String(50), nullable=True)
+    topic = Column(String(255), nullable=False)
+    mistake_code = Column(String(100), nullable=True)
+    mistake_label = Column(String(255), nullable=False)
+    frequency = Column(Integer, default=1)
+    evidence_json = Column(JSONB, default=[])
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class CreditTransaction(Base):
@@ -114,7 +173,7 @@ class CacheEntry(Base):
     query = Column(Text, nullable=False)
     solution = Column(Text, nullable=False)
     embedding = Column(Vector(1536), nullable=True)     # DeepSeek embedding dimension
-    metadata = Column(JSONB, default={})
+    metadata_json = Column("metadata", JSONB, default={})
     hit_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
