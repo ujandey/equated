@@ -17,6 +17,7 @@ from services.streaming_service import streaming_service
 from services.input_validator import input_validator
 from services.explanation import explanation_generator
 from services.verification import verification_engine
+from services.topic_blocks import topic_block_service
 from config.feature_flags import flags
 
 router = APIRouter()
@@ -167,14 +168,40 @@ async def stream_chat(
     # 1. Validate input
     cleaned = input_validator.validate_query(req.content)
     session_id = req.session_id
+    topic_decision_type = "new_topic"
+    topic_decision_reason = "new_session"
+    block_id = None
+    follow_up_anchor_kind = None
 
     # 2. Get or create session
-    if not session_id:
+    if session_id:
+        topic_decision = await topic_block_service.route_query(session_id, cleaned)
+        block_id = topic_decision.block_id
+        topic_decision_type = topic_decision.decision_type
+        topic_decision_reason = topic_decision.reason
+        follow_up_anchor_kind = topic_decision.anchor.kind
+    else:
         session = await session_manager.create_session(user_id)
         session_id = session.id
+        topic_decision = await topic_block_service.route_query(session_id, cleaned)
+        block_id = topic_decision.block_id
+        topic_decision_type = topic_decision.decision_type
+        topic_decision_reason = topic_decision.reason
+        follow_up_anchor_kind = topic_decision.anchor.kind
 
     # 3. Save user message
-    await session_manager.add_message(session_id, "user", cleaned)
+    user_message = await session_manager.add_message(
+        session_id,
+        "user",
+        cleaned,
+        metadata={
+            "topic_decision_type": topic_decision_type,
+            "topic_decision_reason": topic_decision_reason,
+        },
+        block_id=block_id,
+    )
+    await topic_block_service.attach_message_to_block(user_message.id, block_id)
+    await topic_block_service.register_user_turn(block_id, cleaned)
 
     # 3.5 Math intent check
     has_math_intent = is_math_like(cleaned)
@@ -184,55 +211,103 @@ async def stream_chat(
     from cache.query_cache import query_cache
     from cache.cache_metrics import cache_metrics
 
-    cache_hit = await query_cache.lookup(cleaned)
-    if cache_hit.found:
-        if cache_hit.similarity == 1.0:
-            cache_metrics.record_redis_hit()
-        else:
-            cache_metrics.record_vector_hit()
+    should_use_cache = topic_decision_type == "new_topic"
+    if should_use_cache:
+        cache_hit = await query_cache.lookup(cleaned)
+        if cache_hit.found:
+            if cache_hit.similarity == 1.0:
+                cache_metrics.record_redis_hit()
+            else:
+                cache_metrics.record_vector_hit()
 
-        # Extract string content (vector_cache might return dict)
-        cached_content = cache_hit.cached_solution
-        if isinstance(cached_content, dict):
-            cached_content = cached_content.get("solution", str(cached_content))
+            # Extract string content (vector_cache might return dict)
+            cached_content = cache_hit.cached_solution
+            if isinstance(cached_content, dict):
+                cached_content = cached_content.get("solution", str(cached_content))
 
-        async def simulate_stream(content: str):
-            # Chunk it so it's not a single massive token (makes UI feel more alive)
-            chunk_size = 50
-            for i in range(0, len(content), chunk_size):
-                import asyncio
-                await asyncio.sleep(0.01)
-                yield content[i:i+chunk_size]
+            async def simulate_stream(content: str):
+                # Chunk it so it's not a single massive token (makes UI feel more alive)
+                chunk_size = 50
+                for i in range(0, len(content), chunk_size):
+                    import asyncio
+                    await asyncio.sleep(0.01)
+                    yield content[i:i+chunk_size]
 
-        # Save the cache hit to the session history via Celery
-        from workers.tasks import save_chat_message
-        save_chat_message.delay(session_id, "assistant", cached_content, {"cached": True})
+            # Save cache-hit assistant output immediately so follow-ups see it.
+            await session_manager.add_message(
+                session_id,
+                "assistant",
+                cached_content,
+                metadata={
+                    "cached": True,
+                    "topic_decision_type": topic_decision_type,
+                    "topic_decision_reason": topic_decision_reason,
+                },
+                block_id=block_id,
+            )
+            await topic_block_service.refresh_block_summary(block_id)
 
-        logger.info(
-            "chat_cache_hit",
-            user_id=user_id[:8],
-            session_id=session_id[:8],
-        )
+            logger.info(
+                "chat_cache_hit",
+                user_id=user_id[:8],
+                session_id=session_id[:8],
+            )
 
-        return streaming_service.create_sse_response(
-            simulate_stream(cached_content),
-            model_name="cache-hit",
-            session_id=session_id,
-        )
+            return streaming_service.create_sse_response(
+                simulate_stream(cached_content),
+                model_name="cache-hit",
+                session_id=session_id,
+                done_meta={
+                    "block_id": block_id,
+                    "topic_decision_type": topic_decision_type,
+                    "topic_decision_reason": topic_decision_reason,
+                },
+            )
 
-    # Miss, record it
-    cache_metrics.record_redis_miss()
-    cache_metrics.record_vector_miss()
+        # Miss, record it only when cache was actually consulted
+        cache_metrics.record_redis_miss()
+        cache_metrics.record_vector_miss()
 
     # 5. Build context window
-    context_messages = await session_manager.get_context_messages(session_id)
+    context_messages = await topic_block_service.get_context_messages(block_id)
     context_messages = context_compressor.compress(context_messages)
 
     # 6. Add system prompt
     from ai.prompts import SOLVER_SYSTEM_PROMPT
     messages = [
         {"role": "system", "content": SOLVER_SYSTEM_PROMPT},
-    ] + context_messages
+    ]
+
+    if topic_decision_type == "follow_up":
+        if follow_up_anchor_kind == "simplify_request":
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "The latest user message is a follow-up asking for the previous explanation to be made simpler. "
+                        "Interpret words like 'it', 'this', or 'that' as referring to the topic and answer from the immediately "
+                        "preceding conversation context, never to your instructions, response template, or solving format. "
+                        "Your job is to re-explain the same concept, theorem, or solution from the active conversation context "
+                        "in simpler, shorter, beginner-friendly language. "
+                        "Forbidden behaviors: do not describe your response format, do not explain how you usually solve problems, "
+                        "and do not answer as if the latest message were a standalone question about your formatting style. "
+                        "Prefer a direct simple explanation over the full formal template."
+                    ),
+                }
+            )
+        else:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "The latest user message is a follow-up to the active conversation block. "
+                        "Answer it using the immediately preceding problem and explanation as context. "
+                        "Do not treat the latest user message as a brand-new standalone question."
+                    ),
+                }
+            )
+
+    messages += context_messages
 
     # 7. Route to model and stream
     from ai.classifier import classifier
@@ -294,11 +369,13 @@ async def stream_chat(
                     pipeline_metrics.record_verification("skipped", "none")
 
                 # Store in cache and session history via Celery workers
-                from workers.tasks import save_chat_message, index_cache_entry
+                from workers.tasks import index_cache_entry
                 index_cache_entry.delay(query, content)
-                save_chat_message.delay(
-                    sess_id, "assistant", content,
-                    {
+                await session_manager.add_message(
+                    sess_id,
+                    "assistant",
+                    content,
+                    metadata={
                         "model": decision.model_name,
                         "cached": False,
                         "verified": confidence.verified,
@@ -309,8 +386,12 @@ async def stream_chat(
                         "parser_source": confidence.parser_source,
                         "parse_confidence": confidence.parse_confidence.value,
                         "method": confidence.method,
-                    }
+                        "topic_decision_type": topic_decision_type,
+                        "topic_decision_reason": topic_decision_reason,
+                    },
+                    block_id=block_id,
                 )
+                await topic_block_service.refresh_block_summary(block_id)
 
                 # Structured log per chat response
                 logger.info(
@@ -329,6 +410,11 @@ async def stream_chat(
             cache_and_stream(token_stream, cleaned, session_id),
             model_name=decision.model_name,
             session_id=session_id,
+            done_meta={
+                "block_id": block_id,
+                "topic_decision_type": topic_decision_type,
+                "topic_decision_reason": topic_decision_reason,
+            },
         )
     except Exception as e:
         raise AIServiceError(
