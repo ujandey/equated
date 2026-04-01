@@ -108,6 +108,19 @@ class ModelRouter:
         subject = classification.subject
         complexity = classification.complexity
 
+        if settings.APP_ENV == "development" and settings.DEV_PRIMARY_PROVIDER == "groq":
+            if self._is_enabled(ModelProvider.GROQ):
+                return RoutingDecision(
+                    provider=ModelProvider.GROQ,
+                    model_name="llama-3.3-70b-versatile",
+                    max_tokens=min(classification.tokens_est, 4096),
+                    temperature=0.2 if subject == SubjectCategory.MATH else 0.3,
+                    reason=f"development_primary_{subject.value}",
+                    estimated_cost_usd=0.0,
+                    fallback_provider=ModelProvider.GEMINI if self._is_enabled(ModelProvider.GEMINI) else None,
+                    fallback_model="gemini-2.0-flash" if self._is_enabled(ModelProvider.GEMINI) else None,
+                )
+
         # ── Layer 1: Low complexity fast path ───────
         if complexity == ComplexityLevel.LOW and flags.enable_fast_model:
             if self._is_enabled(ModelProvider.GROQ):

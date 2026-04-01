@@ -8,6 +8,7 @@ Previously used DeepSeek's /embeddings endpoint with deepseek-chat,
 but that model does not support embeddings — API returns errors.
 """
 
+import time
 import httpx
 import structlog
 
@@ -30,6 +31,7 @@ class EmbeddingGenerator:
 
     def __init__(self):
         self._client: httpx.AsyncClient | None = None
+        self._disabled_until_monotonic: float = 0.0
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Reuse a single httpx client for connection pooling."""
@@ -47,6 +49,10 @@ class EmbeddingGenerator:
             logger.warning("embedding_skipped", reason="OPENAI_API_KEY not set")
             return None
 
+        if self._disabled_until_monotonic > time.monotonic():
+            logger.warning("embedding_skipped", reason="embedding_provider_temporarily_disabled")
+            return None
+
         try:
             client = await self._get_client()
             response = await client.post(
@@ -60,6 +66,13 @@ class EmbeddingGenerator:
             data = response.json()
             return data["data"][0]["embedding"]
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                self._disabled_until_monotonic = time.monotonic() + 600
+                logger.warning("embedding_rate_limited", cooldown_seconds=600, model=self.MODEL)
+                return None
+            logger.error("embedding_failed", error=str(e), model=self.MODEL)
+            return None
         except Exception as e:
             logger.error("embedding_failed", error=str(e), model=self.MODEL)
             return None

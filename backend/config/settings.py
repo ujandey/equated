@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # ── Payments ────────────────────────────
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""  # For webhook signature verification
 
     # ── Monitoring ──────────────────────────
     SENTRY_DSN: str = ""
@@ -56,6 +57,13 @@ class Settings(BaseSettings):
     # ── Rate Limiting ───────────────────────
     RATE_LIMIT_PER_MINUTE: int = 30
     FREE_TIER_DAILY_SOLVES: int = 5
+
+    # Development auth fallback
+    ENABLE_DEV_AUTH_BYPASS: bool = True
+    DEV_AUTH_USER_ID: str = "00000000-0000-4000-8000-000000000001"
+    DEV_AUTH_EMAIL: str = "local-dev@equated.local"
+    DEV_AUTH_NAME: str = "Local Dev User"
+    DEV_PRIMARY_PROVIDER: str = "groq"
 
     # ── Feature Flags ───────────────────────
     ENABLE_STREAMING: bool = True
@@ -75,6 +83,99 @@ class Settings(BaseSettings):
     # ── Input Validation ─────────────────────
     MAX_INPUT_LENGTH: int = 10000           # Max chars for query input
     MAX_IMAGE_SIZE_MB: int = 10             # Max image upload size
+
+    # ── Placeholder detection ────────────────
+    _PLACEHOLDER_VALUES: set = {
+        "your-deepseek-key", "your-groq-key", "your-openai-key",
+        "your-mistral-key", "your-gemini-key",
+        "your-razorpay-key", "your-razorpay-secret",
+        "your-posthog-key", "your-sentry-dsn",
+        "your-publishable-key", "your-secret-key",
+    }
+
+    def _is_placeholder(self, value: str) -> bool:
+        """Check if a value looks like an unfilled placeholder."""
+        return value.lower() in self._PLACEHOLDER_VALUES or value.startswith("your-")
+
+    def _is_set(self, value: str) -> bool:
+        """Check if a value is non-empty and not a placeholder."""
+        return bool(value) and not self._is_placeholder(value)
+
+    @property
+    def has_any_ai_provider(self) -> bool:
+        """True if at least one AI provider API key is configured."""
+        return any(self._is_set(k) for k in [
+            self.DEEPSEEK_API_KEY, self.GROQ_API_KEY,
+            self.MISTRAL_API_KEY, self.OPENAI_API_KEY,
+            self.GEMINI_API_KEY,
+        ])
+
+    @property
+    def razorpay_configured(self) -> bool:
+        """True if Razorpay is fully configured for payments."""
+        return all(self._is_set(k) for k in [
+            self.RAZORPAY_KEY_ID, self.RAZORPAY_KEY_SECRET,
+            self.RAZORPAY_WEBHOOK_SECRET,
+        ])
+
+    def validate_critical_env(self) -> None:
+        """
+        Validate environment configuration at startup.
+        Fails fast on critical missing values, warns on optional ones.
+        """
+        import logging
+        logger = logging.getLogger("equated.config")
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # ── Critical: At least one AI provider ──
+        if not self.has_any_ai_provider:
+            errors.append(
+                "No AI provider API keys configured. Set at least one of: "
+                "DEEPSEEK_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, MISTRAL_API_KEY, GEMINI_API_KEY"
+            )
+
+        # ── Critical: Database ──
+        if self._is_placeholder(self.DATABASE_URL) or self.DATABASE_URL == "postgresql://postgres:password@localhost:5432/equated":
+            warnings.append("DATABASE_URL is still using the default/placeholder value")
+
+        # ── Optional: Supabase Auth ──
+        if not self._is_set(self.SUPABASE_URL):
+            warnings.append("SUPABASE_URL not set — JWT auth will be disabled")
+
+        # ── Optional: Redis ──
+        if self.REDIS_URL == "redis://localhost:6379/0":
+            warnings.append("REDIS_URL is default localhost — ensure Redis is running or set Upstash URL")
+
+        # ── Optional: Payments ──
+        if not self.razorpay_configured:
+            warnings.append("Razorpay not fully configured — payment features will be disabled")
+
+        # ── Optional: Monitoring ──
+        if not self._is_set(self.SENTRY_DSN):
+            warnings.append("SENTRY_DSN not set — error tracking disabled")
+
+        # ── Optional: Embeddings require OpenAI ──
+        if not self._is_set(self.OPENAI_API_KEY) and self.ENABLE_VECTOR_CACHE:
+            warnings.append(
+                "OPENAI_API_KEY not set but ENABLE_VECTOR_CACHE=true — "
+                "vector cache will be non-functional (embeddings require OpenAI)"
+            )
+
+        # ── Log warnings ──
+        for w in warnings:
+            logger.warning(f"ENV: {w}")
+
+        # ── Fail fast on errors ──
+        if errors:
+            for e in errors:
+                logger.error(f"ENV CRITICAL: {e}")
+            raise SystemExit(
+                f"Startup aborted: {len(errors)} critical environment error(s). "
+                "Check logs above and fix your .env file."
+            )
+
+        logger.info(f"Environment validated ({len(warnings)} warning(s))")
 
     class Config:
         env_file = ".env"

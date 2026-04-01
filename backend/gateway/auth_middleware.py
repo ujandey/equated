@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from services.auth import auth_service
+from config.settings import settings
 
 # Public paths that don't require authentication
 PUBLIC_PATHS = {
@@ -50,6 +51,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Extract token
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
+            if settings.APP_ENV == "development" and settings.ENABLE_DEV_AUTH_BYPASS:
+                request.state.user_id = settings.DEV_AUTH_USER_ID
+                try:
+                    await auth_service.ensure_user_exists(
+                        settings.DEV_AUTH_USER_ID,
+                        email=settings.DEV_AUTH_EMAIL,
+                        name=settings.DEV_AUTH_NAME,
+                    )
+                except Exception as e:
+                    import logging
+                    log = logging.getLogger("equated.gateway.auth")
+                    log.warning(f"dev_user_creation_failed for {settings.DEV_AUTH_USER_ID[:8]}: {e}")
+                return await call_next(request)
             return JSONResponse(
                 status_code=401,
                 content={"error": "missing_token", "message": "Authorization header required."},
@@ -70,7 +84,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Auto-create user record on first authenticated request
         try:
             await auth_service.ensure_user_exists(user_id)
-        except Exception:
-            pass  # Non-fatal: user creation might fail if DB is down, but let the request continue
+        except Exception as e:
+            # Non-fatal: user creation might fail if DB is down, but let the request continue
+            import logging
+            log = logging.getLogger("equated.gateway.auth")
+            log.warning(f"user_creation_failed for {user_id[:8]}: {e}")
 
         return await call_next(request)

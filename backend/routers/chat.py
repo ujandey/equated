@@ -15,6 +15,8 @@ from services.session_manager import session_manager
 from services.context_compressor import context_compressor
 from services.streaming_service import streaming_service
 from services.input_validator import input_validator
+from services.explanation import explanation_generator
+from services.verification import verification_engine
 from config.feature_flags import flags
 
 router = APIRouter()
@@ -148,11 +150,20 @@ async def stream_chat(
     Flow:
       1. Validate input
       2. Get/create session
-      3. Build context window (with compression)
-      4. Route to AI model
-      5. Stream tokens back via SSE
-      6. Save messages to session
+      3. Math intent check
+      4. Build context window (with compression)
+      5. Route to AI model
+      6. Stream tokens back via SSE
+      7. Verify + compute confidence
+      8. Save messages to session
     """
+    import structlog
+    from services.confidence import compute_confidence_report
+    from services.math_intent_detector import is_math_like
+    from monitoring.pipeline_metrics import pipeline_metrics
+
+    logger = structlog.get_logger("equated.routers.chat")
+
     # 1. Validate input
     cleaned = input_validator.validate_query(req.content)
     session_id = req.session_id
@@ -165,6 +176,10 @@ async def stream_chat(
     # 3. Save user message
     await session_manager.add_message(session_id, "user", cleaned)
 
+    # 3.5 Math intent check
+    has_math_intent = is_math_like(cleaned)
+    pipeline_metrics.record_math_intent(has_math_intent)
+
     # 4. Check Question Cache
     from cache.query_cache import query_cache
     from cache.cache_metrics import cache_metrics
@@ -175,12 +190,12 @@ async def stream_chat(
             cache_metrics.record_redis_hit()
         else:
             cache_metrics.record_vector_hit()
-        
+
         # Extract string content (vector_cache might return dict)
         cached_content = cache_hit.cached_solution
         if isinstance(cached_content, dict):
             cached_content = cached_content.get("solution", str(cached_content))
-            
+
         async def simulate_stream(content: str):
             # Chunk it so it's not a single massive token (makes UI feel more alive)
             chunk_size = 50
@@ -188,11 +203,17 @@ async def stream_chat(
                 import asyncio
                 await asyncio.sleep(0.01)
                 yield content[i:i+chunk_size]
-        
+
         # Save the cache hit to the session history via Celery
         from workers.tasks import save_chat_message
         save_chat_message.delay(session_id, "assistant", cached_content, {"cached": True})
-        
+
+        logger.info(
+            "chat_cache_hit",
+            user_id=user_id[:8],
+            session_id=session_id[:8],
+        )
+
         return streaming_service.create_sse_response(
             simulate_stream(cached_content),
             model_name="cache-hit",
@@ -216,17 +237,16 @@ async def stream_chat(
     # 7. Route to model and stream
     from ai.classifier import classifier
     from ai.router import model_router
-    from ai.models import get_model
+    from ai.fallback import fallback_handler
 
     classification = classifier.classify(cleaned)
     decision = model_router.route(classification)
 
     try:
-        model = get_model(decision.provider.value)
-        token_stream = model.stream(
+        token_stream = fallback_handler.stream_with_fallback(
             messages,
-            max_tokens=decision.max_tokens,
-            temperature=decision.temperature,
+            decision,
+            user_id=user_id,
         )
 
         async def cache_and_stream(stream, query, sess_id):
@@ -234,15 +254,75 @@ async def stream_chat(
             async for token in stream:
                 full_response.append(token)
                 yield token
-            
+
             if full_response:
                 content = "".join(full_response)
+
+                # Run verification only if math intent detected
+                if has_math_intent:
+                    explanation = explanation_generator.generate(content, query)
+                    answer_for_verification = explanation.final_answer or content
+                    analysis = await verification_engine.analyze_problem(query)
+                    math_result = analysis.math_result
+                    verification = verification_engine.verify(query, answer_for_verification, math_result, parse_result=analysis)
+                    confidence = compute_confidence_report(
+                        parse_confidence=analysis.confidence,
+                        verification_confidence=verification.confidence.value,
+                        method=verification.method,
+                        parser_source=analysis.source,
+                        math_check_passed=verification.math_check_passed,
+                    )
+                    pipeline_metrics.record_parse(analysis.source)
+                    pipeline_metrics.record_confidence(confidence.overall_confidence.value)
+                    pipeline_metrics.record_verification(
+                        "passed" if verification.is_verified else "failed",
+                        verification.method,
+                    )
+                else:
+                    confidence = compute_confidence_report(
+                        parse_confidence="low",
+                        verification_confidence="low",
+                        method="none",
+                        parser_source="skipped",
+                        math_check_passed=False,
+                        failure_reason="no_math_intent",
+                    )
+                    math_result = None
+                    analysis = None
+                    pipeline_metrics.record_parse("skipped")
+                    pipeline_metrics.record_confidence("low")
+                    pipeline_metrics.record_verification("skipped", "none")
+
                 # Store in cache and session history via Celery workers
                 from workers.tasks import save_chat_message, index_cache_entry
                 index_cache_entry.delay(query, content)
                 save_chat_message.delay(
                     sess_id, "assistant", content,
-                    {"model": decision.model_name, "cached": False}
+                    {
+                        "model": decision.model_name,
+                        "cached": False,
+                        "verified": confidence.verified,
+                        "overall_confidence": confidence.overall_confidence.value,
+                        "verification_confidence": confidence.verification_confidence.value,
+                        "math_check_passed": confidence.verified,
+                        "math_engine_result": math_result.result if math_result and math_result.success else None,
+                        "parser_source": confidence.parser_source,
+                        "parse_confidence": confidence.parse_confidence.value,
+                        "method": confidence.method,
+                    }
+                )
+
+                # Structured log per chat response
+                logger.info(
+                    "chat_stream_complete",
+                    user_id=user_id[:8],
+                    session_id=sess_id[:8],
+                    verified=confidence.verified,
+                    overall_confidence=confidence.overall_confidence.value,
+                    method=confidence.method,
+                    parser_source=confidence.parser_source,
+                    model=decision.model_name,
+                    has_math_intent=has_math_intent,
                 )
 
         return streaming_service.create_sse_response(

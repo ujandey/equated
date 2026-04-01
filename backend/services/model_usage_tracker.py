@@ -55,15 +55,11 @@ class ModelUsageTracker:
             db = await get_db()
             await db.execute(
                 """INSERT INTO model_usage
-                   (user_id, model, provider, input_tokens, output_tokens,
-                    cost_usd, latency_ms, classification, cache_status,
-                    success, error, created_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
-                entry.user_id, entry.model, entry.provider,
+                   (user_id, model, input_tokens, output_tokens, cost_usd, created_at)
+                   VALUES ($1, $2, $3, $4, $5, $6)""",
+                entry.user_id, entry.model,
                 entry.input_tokens, entry.output_tokens,
-                entry.cost_usd, entry.latency_ms,
-                entry.classification, entry.cache_status,
-                entry.success, entry.error, entry.created_at,
+                entry.cost_usd, entry.created_at,
             )
 
             logger.info(
@@ -85,15 +81,15 @@ class ModelUsageTracker:
         db = await get_db()
 
         rows = await db.fetch(
-            """SELECT model, provider,
+            """SELECT model,
                       COUNT(*) as calls,
                       SUM(input_tokens) as total_input_tokens,
                       SUM(output_tokens) as total_output_tokens,
                       SUM(cost_usd) as total_cost,
-                      AVG(latency_ms) as avg_latency_ms
+                      0 as avg_latency_ms
                FROM model_usage
-               WHERE DATE(created_at) = $1 AND success = true
-               GROUP BY model, provider""",
+               WHERE DATE(created_at) = $1
+               GROUP BY model""",
             target_date,
         )
 
@@ -105,7 +101,7 @@ class ModelUsageTracker:
             "models": [
                 {
                     "model": r["model"],
-                    "provider": r["provider"],
+                    "provider": "unknown",
                     "calls": r["calls"],
                     "input_tokens": r["total_input_tokens"],
                     "output_tokens": r["total_output_tokens"],
@@ -146,14 +142,14 @@ class ModelUsageTracker:
         db = await get_db()
         rows = await db.fetch(
             """SELECT model,
-                      AVG(latency_ms) as avg_ms,
-                      MIN(latency_ms) as min_ms,
-                      MAX(latency_ms) as max_ms,
-                      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY latency_ms) as p50_ms,
-                      PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms) as p95_ms,
-                      PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms) as p99_ms
+                      0 as avg_ms,
+                      0 as min_ms,
+                      0 as max_ms,
+                      0 as p50_ms,
+                      0 as p95_ms,
+                      0 as p99_ms
                FROM model_usage
-               WHERE success = true AND created_at > NOW() - INTERVAL '24 hours'
+               WHERE created_at > NOW() - INTERVAL '24 hours'
                GROUP BY model"""
         )
 

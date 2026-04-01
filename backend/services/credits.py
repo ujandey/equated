@@ -57,7 +57,7 @@ class CreditService:
         if not user:
             raise NotFoundError("User")
 
-        today = date.today().isoformat()
+        today = date.today()
         solves_row = await db.fetchrow(
             "SELECT COUNT(*) as cnt FROM solves WHERE user_id = $1 AND DATE(created_at) = $2",
             user_id, today,
@@ -104,7 +104,7 @@ class CreditService:
 
     async def _check_free_tier(self, db, user_id: str, cost: int) -> dict:
         """Check free tier daily limit."""
-        today = date.today().isoformat()
+        today = date.today()
         row = await db.fetchrow(
             """SELECT COUNT(*) as cnt FROM solves
                WHERE user_id = $1 AND DATE(created_at) = $2""",
@@ -138,18 +138,28 @@ class CreditService:
         }
 
     async def _deduct_paid(self, db, user_id: str, current_credits: int, cost: int, model_name: str) -> dict:
-        """Check and deduct from paid credits."""
-        if current_credits < cost:
+        """Check and deduct from paid credits using an atomic race-condition-safe query."""
+        # Atomic check and deduct. Locks the row and aborts if credits < cost.
+        result = await db.fetchrow(
+            """UPDATE users 
+               SET credits = credits - $1 
+               WHERE id = $2 AND credits >= $1
+               RETURNING credits""",
+            cost, user_id
+        )
+
+        if not result:
+            # Deduction failed because they don't have enough credits
+            actual_credits = await db.fetchval("SELECT credits FROM users WHERE id = $1", user_id) or 0
             return {
                 "allowed": False,
-                "remaining": current_credits,
+                "remaining": actual_credits,
                 "tier": "paid",
-                "message": f"Need {cost} credits for {model_name}, but you only have {current_credits}. Purchase a credit pack.",
+                "message": f"Need {cost} credits for {model_name}, but you only have {actual_credits}. Purchase a credit pack.",
             }
 
-        await db.execute(
-            "UPDATE users SET credits = credits - $1 WHERE id = $2", cost, user_id
-        )
+        new_balance = result["credits"]
+
         await db.execute(
             """INSERT INTO credit_transactions (user_id, amount, type, description)
                VALUES ($1, $2, 'deduction', $3)""",
@@ -158,9 +168,9 @@ class CreditService:
 
         return {
             "allowed": True,
-            "remaining": current_credits - cost,
+            "remaining": new_balance,
             "tier": "paid",
-            "message": f"{current_credits - cost} credits remaining (-{cost} for {model_name}).",
+            "message": f"{new_balance} credits remaining (-{cost} for {model_name}).",
         }
 
     async def add_credits(self, user_id: str, amount: int, reason: str, payment_id: str = ""):

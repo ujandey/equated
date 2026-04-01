@@ -99,7 +99,7 @@ class SessionManager:
         from db.connection import get_db
         db = await get_db()
         await db.execute(
-            """INSERT INTO messages (id, session_id, role, content, metadata_json, created_at)
+            """INSERT INTO messages (id, session_id, role, content, metadata, created_at)
                VALUES ($1, $2, $3, $4, $5, $6)""",
             msg.id, session_id, msg.role, msg.content,
             json.dumps(msg.metadata), msg.created_at,
@@ -157,7 +157,7 @@ class SessionManager:
             title=row["title"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
-            is_active=row.get("is_active", True),
+            is_active=row["is_active"] if "is_active" in row else True,
         )
 
 

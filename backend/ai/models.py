@@ -58,6 +58,30 @@ class BaseModel(ABC):
 
 
 # ── OpenAI-Compatible Helper ───────────────────────
+# ── Shared HTTP Client Pool ─────────────────────────
+# One persistent client per provider, reusing TCP connections.
+_shared_clients: dict[str, httpx.AsyncClient] = {}
+
+
+def _get_shared_client(provider: str, timeout: float = 60.0) -> httpx.AsyncClient:
+    """Get or create a shared httpx client for a provider."""
+    if provider not in _shared_clients or _shared_clients[provider].is_closed:
+        _shared_clients[provider] = httpx.AsyncClient(
+            timeout=timeout,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _shared_clients[provider]
+
+
+async def close_all_clients():
+    """Close all shared HTTP clients. Call during app shutdown."""
+    for provider, client in _shared_clients.items():
+        if not client.is_closed:
+            await client.aclose()
+            logger.info("http_client_closed", provider=provider)
+    _shared_clients.clear()
+
+
 class OpenAICompatibleModel(BaseModel):
     """
     Base class for any model using the OpenAI-compatible chat completions API.
@@ -75,26 +99,30 @@ class OpenAICompatibleModel(BaseModel):
         self.cost_per_1k_output = cost_output
         self.timeout = timeout
 
+    def _get_client(self) -> httpx.AsyncClient:
+        """Get the shared HTTP client for this provider."""
+        return _get_shared_client(self.provider, self.timeout)
+
     async def generate(self, messages: list[dict], max_tokens: int = 4096,
                        temperature: float = 0.3) -> ModelResponse:
         start = time.perf_counter()
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
+        client = self._get_client()
+        response = await client.post(
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model_name,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
 
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
         usage = data.get("usage", {})
@@ -125,8 +153,8 @@ class OpenAICompatibleModel(BaseModel):
 
     async def stream(self, messages: list[dict], max_tokens: int = 4096,
                      temperature: float = 0.3) -> AsyncIterator[str]:
-        async with httpx.AsyncClient(timeout=self.timeout * 2) as client:
-            async with client.stream(
+        client = self._get_client()
+        async with client.stream(
                 "POST",
                 f"{self.base_url}/chat/completions",
                 headers={
@@ -141,6 +169,7 @@ class OpenAICompatibleModel(BaseModel):
                     "stream": True,
                 },
             ) as response:
+                response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line.startswith("data: ") and line != "data: [DONE]":
                         try:
@@ -148,7 +177,10 @@ class OpenAICompatibleModel(BaseModel):
                             delta = chunk["choices"][0].get("delta", {})
                             if content := delta.get("content"):
                                 yield content
-                        except (json.JSONDecodeError, KeyError, IndexError):
+                        except (json.JSONDecodeError, KeyError, IndexError) as e:
+                            import logging
+                            log = logging.getLogger("equated.ai.models")
+                            log.warning(f"stream_parse_error: {type(e).__name__} at line: {line[:80]}")
                             continue
 
 
@@ -256,6 +288,10 @@ class GeminiModel(BaseModel):
         self.cost_per_1k_input = costs["input"]
         self.cost_per_1k_output = costs["output"]
 
+    def _get_client(self) -> httpx.AsyncClient:
+        """Get the shared HTTP client for Gemini."""
+        return _get_shared_client(self.provider, 60.0)
+
     async def generate(self, messages: list[dict], max_tokens: int = 4096,
                        temperature: float = 0.3) -> ModelResponse:
         """Call Gemini via the Google AI API (REST)."""
@@ -264,20 +300,20 @@ class GeminiModel(BaseModel):
         # Convert OpenAI message format to Gemini format
         contents = self._convert_messages(messages)
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent",
-                params={"key": self.api_key},
-                json={
-                    "contents": contents,
-                    "generationConfig": {
-                        "maxOutputTokens": max_tokens,
-                        "temperature": temperature,
-                    },
+        client = self._get_client()
+        response = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent",
+            params={"key": self.api_key},
+            json={
+                "contents": contents,
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "temperature": temperature,
                 },
-            )
-            response.raise_for_status()
-            data = response.json()
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
 
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
 
@@ -319,8 +355,8 @@ class GeminiModel(BaseModel):
         """Stream from Gemini via the REST streaming endpoint."""
         contents = self._convert_messages(messages)
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
+        client = self._get_client()
+        async with client.stream(
                 "POST",
                 f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent",
                 params={"key": self.api_key, "alt": "sse"},
@@ -332,6 +368,7 @@ class GeminiModel(BaseModel):
                     },
                 },
             ) as response:
+                response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         try:

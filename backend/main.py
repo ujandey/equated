@@ -23,7 +23,14 @@ from gateway.request_logger import RequestLoggerMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and tear down services."""
+    import logging
+    logger = logging.getLogger("equated.startup")
+
     # ── Startup ─────────────────────────────
+    # Validate environment FIRST — fail fast before connecting to anything
+    from config.settings import settings as _settings
+    _settings.validate_critical_env()
+
     from monitoring.json_logger import configure_json_logging
     from monitoring.tracing import init_tracing
     from monitoring.metrics import init_metrics
@@ -33,17 +40,40 @@ async def lifespan(app: FastAPI):
     configure_json_logging()
     init_tracing()
     init_metrics()
-    await redis_client.connect()
-    await init_db()
+
+    # Connect to Redis (non-fatal if unavailable)
+    try:
+        await redis_client.connect()
+        logger.info("Redis connected")
+    except Exception as e:
+        logger.warning(f"Redis connection failed (app will run without cache): {e}")
+
+    # Connect to database (non-fatal if unavailable)
+    try:
+        await init_db()
+        logger.info("Database connected")
+    except Exception as e:
+        logger.warning(f"Database connection failed (some features unavailable): {e}")
 
     yield
 
     # ── Shutdown ────────────────────────────
     from cache.redis_cache import redis_client as _redis
     from db.connection import close_db
+    from ai.models import close_all_clients
 
-    await _redis.disconnect()
-    await close_db()
+    try:
+        await close_all_clients()
+    except Exception as e:
+        logger.error(f"HTTP client shutdown failed: {e}", exc_info=True)
+    try:
+        await _redis.disconnect()
+    except Exception as e:
+        logger.error(f"Redis disconnect failed: {e}", exc_info=True)
+    try:
+        await close_db()
+    except Exception as e:
+        logger.error(f"Database disconnect failed: {e}", exc_info=True)
 
 
 # ── App Factory ─────────────────────────────────────

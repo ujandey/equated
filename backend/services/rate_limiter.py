@@ -48,7 +48,7 @@ class UserRateLimiter:
 
     async def _check_free_tier(self, db, user_id: str) -> dict:
         """Check free tier daily limit."""
-        today = date.today().isoformat()
+        today = date.today()
         row = await db.fetchrow(
             """SELECT COUNT(*) as solve_count FROM solves
                WHERE user_id = $1 AND DATE(created_at) = $2""",
@@ -73,7 +73,13 @@ class UserRateLimiter:
         }
 
     async def _check_paid_tier(self, db, user_id: str, credits: int) -> dict:
-        """Check and deduct from paid credits."""
+        """
+        Check and atomically deduct from paid credits.
+        
+        Uses a WHERE clause to prevent race conditions where two concurrent
+        requests both read the same balance and both deduct. Only deducts if
+        credits > 0 at time of UPDATE.
+        """
         if credits <= 0:
             return {
                 "allowed": False,
@@ -82,10 +88,34 @@ class UserRateLimiter:
                 "message": "No credits remaining. Purchase a credit pack.",
             }
 
-        # Deduct 1 credit
-        await db.execute(
-            "UPDATE users SET credits = credits - 1 WHERE id = $1", user_id
+        # ATOMIC DEDUCTION: Only deduct if credits > 0 at update time
+        # This prevents race conditions where multiple concurrent requests
+        # all deduct from the same balance
+        result = await db.execute(
+            "UPDATE users SET credits = credits - 1 WHERE id = $1 AND credits > 0",
+            user_id
         )
+
+        # Check if the UPDATE actually affected a row
+        # asyncpg returns a string like "UPDATE 1" or "UPDATE 0"
+        rows_affected = int(result.split()[-1]) if result else 0
+
+        if rows_affected == 0:
+            # No rows updated: another request already depleted credits
+            return {
+                "allowed": False,
+                "remaining": 0,
+                "tier": "paid",
+                "message": "No credits remaining. Purchase a credit pack.",
+            }
+
+        # Fetch the new credit balance
+        user = await db.fetchrow(
+            "SELECT credits FROM users WHERE id = $1", user_id
+        )
+        remaining = user["credits"] if user else 0
+
+        # Log the transaction
         await db.execute(
             """INSERT INTO credit_transactions (user_id, amount, type, description)
                VALUES ($1, -1, 'deduction', 'Problem solve')""",
@@ -94,9 +124,9 @@ class UserRateLimiter:
 
         return {
             "allowed": True,
-            "remaining": credits - 1,
+            "remaining": remaining,
             "tier": "paid",
-            "message": f"{credits - 1} credits remaining.",
+            "message": f"{remaining} credits remaining.",
         }
 
 
