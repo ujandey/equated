@@ -18,7 +18,6 @@ sympy>=1.12
 
 # ── OCR & Parsing ────────────────
 pytesseract>=0.3.10
-pix2tex>=0.1.1
 Pillow>=10.2.0
 
 # ── Database ─────────────────────

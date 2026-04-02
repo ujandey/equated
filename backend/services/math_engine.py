@@ -18,6 +18,7 @@ from sympy import (
 from sympy.parsing.sympy_parser import (
     parse_expr, standard_transformations,
     implicit_multiplication_application,
+    convert_xor,
 )
 
 
@@ -35,13 +36,20 @@ class MathResult:
 class MathEngine:
     """SymPy-powered symbolic math computation engine."""
 
-    TRANSFORMATIONS = standard_transformations + (implicit_multiplication_application,)
+    TRANSFORMATIONS = standard_transformations + (
+        implicit_multiplication_application,
+        convert_xor,
+    )
+
+    def parse_symbolic_expression(self, expr_str: str):
+        """Parse a symbolic expression with the engine's standard transformations."""
+        return parse_expr(expr_str, transformations=self.TRANSFORMATIONS)
 
     def solve_expression(self, expr_str: str) -> MathResult:
         """Parse and simplify a mathematical expression."""
         try:
-            expr = parse_expr(expr_str, transformations=self.TRANSFORMATIONS)
-            result = simplify(expr)
+            expr = self.parse_symbolic_expression(expr_str)
+            result = factor(simplify(expr))
             return MathResult(
                 expression=expr_str,
                 result=str(result),
@@ -59,7 +67,7 @@ class MathEngine:
         """Compute the derivative of an expression."""
         try:
             x = symbols(var)
-            expr = parse_expr(expr_str, transformations=self.TRANSFORMATIONS)
+            expr = self.parse_symbolic_expression(expr_str)
             result = diff(expr, x)
             return MathResult(
                 expression=f"d/d{var}({expr_str})",
@@ -82,7 +90,7 @@ class MathEngine:
         """Compute the indefinite integral of an expression."""
         try:
             x = symbols(var)
-            expr = parse_expr(expr_str, transformations=self.TRANSFORMATIONS)
+            expr = self.parse_symbolic_expression(expr_str)
             result = integrate(expr, x)
             return MathResult(
                 expression=f"∫({expr_str}) d{var}",
@@ -108,9 +116,9 @@ class MathEngine:
             # Handle "expr = value" format
             if "=" in equation_str:
                 lhs, rhs = equation_str.split("=", 1)
-                expr = parse_expr(lhs, transformations=self.TRANSFORMATIONS) - parse_expr(rhs, transformations=self.TRANSFORMATIONS)
+                expr = self.parse_symbolic_expression(lhs) - self.parse_symbolic_expression(rhs)
             else:
-                expr = parse_expr(equation_str, transformations=self.TRANSFORMATIONS)
+                expr = self.parse_symbolic_expression(equation_str)
 
             solutions = solve(expr, x)
             return MathResult(
@@ -127,6 +135,49 @@ class MathEngine:
         except Exception as e:
             return MathResult(
                 expression=equation_str, result="", latex_result="",
+                steps=[], success=False, error=str(e),
+            )
+
+    def evaluate_expr(self, expr_str: str) -> MathResult:
+        """Evaluate a symbolic or numeric expression."""
+        try:
+            expr = self.parse_symbolic_expression(expr_str)
+            result = expr.evalf() if expr.free_symbols == set() else simplify(expr)
+            return MathResult(
+                expression=expr_str,
+                result=str(result),
+                latex_result=latex(result),
+                steps=[f"Expression: {expr}", f"Evaluated: {result}"],
+                success=True,
+            )
+        except Exception as e:
+            return MathResult(
+                expression=expr_str, result="", latex_result="",
+                steps=[], success=False, error=str(e),
+            )
+
+    def limit_expr(self, expr_str: str, var: str = "x", to_value: str = "0") -> MathResult:
+        """Compute the limit of an expression."""
+        try:
+            x = symbols(var)
+            expr = self.parse_symbolic_expression(expr_str)
+            approach = self.parse_symbolic_expression(to_value)
+            result = limit(expr, x, approach)
+            return MathResult(
+                expression=f"limit({expr_str}, {var}, {to_value})",
+                result=str(result),
+                latex_result=latex(result),
+                steps=[
+                    f"Expression: {expr}",
+                    f"Variable: {var}",
+                    f"Approach value: {approach}",
+                    f"Limit: {result}",
+                ],
+                success=True,
+            )
+        except Exception as e:
+            return MathResult(
+                expression=expr_str, result="", latex_result="",
                 steps=[], success=False, error=str(e),
             )
 

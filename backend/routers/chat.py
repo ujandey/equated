@@ -1,29 +1,21 @@
 """
-Router — Chat Endpoints
-
-/api/v1/chat — session management, messaging, and streaming.
-Provides full CRUD for chat sessions and a streaming endpoint
-for real-time token delivery.
+Router - Chat Endpoints
 """
+
+import asyncio
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_user
-from core.exceptions import NotFoundError, AIServiceError
+from core.exceptions import NotFoundError
+from services.master_controller import master_controller
 from services.session_manager import session_manager
-from services.context_compressor import context_compressor
 from services.streaming_service import streaming_service
-from services.input_validator import input_validator
-from services.explanation import explanation_generator
-from services.verification import verification_engine
-from services.topic_blocks import topic_block_service
-from config.feature_flags import flags
 
 router = APIRouter()
 
 
-# ── Request / Response Models ───────────────────────
 class CreateSessionRequest(BaseModel):
     title: str = "New Chat"
 
@@ -38,13 +30,11 @@ class UpdateSessionRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
 
 
-# ── Session Endpoints ──────────────────────────────
 @router.post("/chat/sessions")
 async def create_session(
     req: CreateSessionRequest,
     user_id: str = Depends(get_current_user),
 ):
-    """Create a new chat session."""
     session = await session_manager.create_session(user_id, req.title)
     return {
         "session_id": session.id,
@@ -58,7 +48,6 @@ async def list_sessions(
     user_id: str = Depends(get_current_user),
     limit: int = 20,
 ):
-    """List the user's recent chat sessions."""
     sessions = await session_manager.list_sessions(user_id, limit)
     return {
         "sessions": [
@@ -79,13 +68,11 @@ async def get_session(
     session_id: str,
     user_id: str = Depends(get_current_user),
 ):
-    """Get a specific session with its messages."""
     session = await session_manager.get_session(session_id)
     if not session or session.user_id != user_id:
         raise NotFoundError("Session")
 
     messages = await session_manager.get_context_messages(session_id, max_messages=50)
-
     return {
         "id": session.id,
         "title": session.title,
@@ -101,7 +88,6 @@ async def update_session(
     req: UpdateSessionRequest,
     user_id: str = Depends(get_current_user),
 ):
-    """Rename a chat session."""
     session = await session_manager.get_session(session_id)
     if not session or session.user_id != user_id:
         raise NotFoundError("Session")
@@ -115,7 +101,6 @@ async def delete_session(
     session_id: str,
     user_id: str = Depends(get_current_user),
 ):
-    """Delete a chat session and all its messages."""
     session = await session_manager.get_session(session_id)
     if not session or session.user_id != user_id:
         raise NotFoundError("Session")
@@ -130,7 +115,6 @@ async def get_messages(
     user_id: str = Depends(get_current_user),
     limit: int = 50,
 ):
-    """Get messages for a session."""
     session = await session_manager.get_session(session_id)
     if not session or session.user_id != user_id:
         raise NotFoundError("Session")
@@ -139,285 +123,34 @@ async def get_messages(
     return {"messages": messages}
 
 
-# ── Streaming Chat Endpoint ────────────────────────
 @router.post("/chat/stream")
 async def stream_chat(
     req: SendMessageRequest,
     user_id: str = Depends(get_current_user),
 ):
-    """
-    Send a message and stream the AI response via SSE.
-
-    Flow:
-      1. Validate input
-      2. Get/create session
-      3. Math intent check
-      4. Build context window (with compression)
-      5. Route to AI model
-      6. Stream tokens back via SSE
-      7. Verify + compute confidence
-      8. Save messages to session
-    """
-    import structlog
-    from services.confidence import compute_confidence_report
-    from services.math_intent_detector import is_math_like
-    from monitoring.pipeline_metrics import pipeline_metrics
-
-    logger = structlog.get_logger("equated.routers.chat")
-
-    # 1. Validate input
-    cleaned = input_validator.validate_query(req.content)
-    session_id = req.session_id
-    topic_decision_type = "new_topic"
-    topic_decision_reason = "new_session"
-    block_id = None
-    follow_up_anchor_kind = None
-
-    # 2. Get or create session
-    if session_id:
-        topic_decision = await topic_block_service.route_query(session_id, cleaned)
-        block_id = topic_decision.block_id
-        topic_decision_type = topic_decision.decision_type
-        topic_decision_reason = topic_decision.reason
-        follow_up_anchor_kind = topic_decision.anchor.kind
-    else:
-        session = await session_manager.create_session(user_id)
-        session_id = session.id
-        topic_decision = await topic_block_service.route_query(session_id, cleaned)
-        block_id = topic_decision.block_id
-        topic_decision_type = topic_decision.decision_type
-        topic_decision_reason = topic_decision.reason
-        follow_up_anchor_kind = topic_decision.anchor.kind
-
-    # 3. Save user message
-    user_message = await session_manager.add_message(
-        session_id,
-        "user",
-        cleaned,
-        metadata={
-            "topic_decision_type": topic_decision_type,
-            "topic_decision_reason": topic_decision_reason,
-        },
-        block_id=block_id,
+    result = await master_controller.handle_query(
+        user_id=user_id,
+        query=req.content,
+        source="chat",
+        session_id=req.session_id,
     )
-    await topic_block_service.attach_message_to_block(user_message.id, block_id)
-    await topic_block_service.register_user_turn(block_id, cleaned)
 
-    # 3.5 Math intent check
-    has_math_intent = is_math_like(cleaned)
-    pipeline_metrics.record_math_intent(has_math_intent)
+    async def token_stream():
+        text = result.response.raw_text
+        for i in range(0, len(text), 80):
+            await asyncio.sleep(0)
+            yield text[i:i + 80]
 
-    # 4. Check Question Cache
-    from cache.query_cache import query_cache
-    from cache.cache_metrics import cache_metrics
-
-    should_use_cache = topic_decision_type == "new_topic"
-    if should_use_cache:
-        cache_hit = await query_cache.lookup(cleaned)
-        if cache_hit.found:
-            if cache_hit.similarity == 1.0:
-                cache_metrics.record_redis_hit()
-            else:
-                cache_metrics.record_vector_hit()
-
-            # Extract string content (vector_cache might return dict)
-            cached_content = cache_hit.cached_solution
-            if isinstance(cached_content, dict):
-                cached_content = cached_content.get("solution", str(cached_content))
-
-            async def simulate_stream(content: str):
-                # Chunk it so it's not a single massive token (makes UI feel more alive)
-                chunk_size = 50
-                for i in range(0, len(content), chunk_size):
-                    import asyncio
-                    await asyncio.sleep(0.01)
-                    yield content[i:i+chunk_size]
-
-            # Save cache-hit assistant output immediately so follow-ups see it.
-            await session_manager.add_message(
-                session_id,
-                "assistant",
-                cached_content,
-                metadata={
-                    "cached": True,
-                    "topic_decision_type": topic_decision_type,
-                    "topic_decision_reason": topic_decision_reason,
-                },
-                block_id=block_id,
-            )
-            await topic_block_service.refresh_block_summary(block_id)
-
-            logger.info(
-                "chat_cache_hit",
-                user_id=user_id[:8],
-                session_id=session_id[:8],
-            )
-
-            return streaming_service.create_sse_response(
-                simulate_stream(cached_content),
-                model_name="cache-hit",
-                session_id=session_id,
-                done_meta={
-                    "block_id": block_id,
-                    "topic_decision_type": topic_decision_type,
-                    "topic_decision_reason": topic_decision_reason,
-                },
-            )
-
-        # Miss, record it only when cache was actually consulted
-        cache_metrics.record_redis_miss()
-        cache_metrics.record_vector_miss()
-
-    # 5. Build context window
-    context_messages = await topic_block_service.get_context_messages(block_id)
-    context_messages = context_compressor.compress(context_messages)
-
-    # 6. Add system prompt
-    from ai.prompts import SOLVER_SYSTEM_PROMPT
-    messages = [
-        {"role": "system", "content": SOLVER_SYSTEM_PROMPT},
-    ]
-
-    if topic_decision_type == "follow_up":
-        if follow_up_anchor_kind == "simplify_request":
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        "The latest user message is a follow-up asking for the previous explanation to be made simpler. "
-                        "Interpret words like 'it', 'this', or 'that' as referring to the topic and answer from the immediately "
-                        "preceding conversation context, never to your instructions, response template, or solving format. "
-                        "Your job is to re-explain the same concept, theorem, or solution from the active conversation context "
-                        "in simpler, shorter, beginner-friendly language. "
-                        "Forbidden behaviors: do not describe your response format, do not explain how you usually solve problems, "
-                        "and do not answer as if the latest message were a standalone question about your formatting style. "
-                        "Prefer a direct simple explanation over the full formal template."
-                    ),
-                }
-            )
-        else:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        "The latest user message is a follow-up to the active conversation block. "
-                        "Answer it using the immediately preceding problem and explanation as context. "
-                        "Do not treat the latest user message as a brand-new standalone question."
-                    ),
-                }
-            )
-
-    messages += context_messages
-
-    # 7. Route to model and stream
-    from ai.classifier import classifier
-    from ai.router import model_router
-    from ai.fallback import fallback_handler
-
-    classification = classifier.classify(cleaned)
-    decision = model_router.route(classification)
-
-    try:
-        token_stream = fallback_handler.stream_with_fallback(
-            messages,
-            decision,
-            user_id=user_id,
-        )
-
-        async def cache_and_stream(stream, query, sess_id):
-            full_response = []
-            async for token in stream:
-                full_response.append(token)
-                yield token
-
-            if full_response:
-                content = "".join(full_response)
-
-                # Run verification only if math intent detected
-                if has_math_intent:
-                    explanation = explanation_generator.generate(content, query)
-                    answer_for_verification = explanation.final_answer or content
-                    analysis = await verification_engine.analyze_problem(query)
-                    math_result = analysis.math_result
-                    verification = verification_engine.verify(query, answer_for_verification, math_result, parse_result=analysis)
-                    confidence = compute_confidence_report(
-                        parse_confidence=analysis.confidence,
-                        verification_confidence=verification.confidence.value,
-                        method=verification.method,
-                        parser_source=analysis.source,
-                        math_check_passed=verification.math_check_passed,
-                    )
-                    pipeline_metrics.record_parse(analysis.source)
-                    pipeline_metrics.record_confidence(confidence.overall_confidence.value)
-                    pipeline_metrics.record_verification(
-                        "passed" if verification.is_verified else "failed",
-                        verification.method,
-                    )
-                else:
-                    confidence = compute_confidence_report(
-                        parse_confidence="low",
-                        verification_confidence="low",
-                        method="none",
-                        parser_source="skipped",
-                        math_check_passed=False,
-                        failure_reason="no_math_intent",
-                    )
-                    math_result = None
-                    analysis = None
-                    pipeline_metrics.record_parse("skipped")
-                    pipeline_metrics.record_confidence("low")
-                    pipeline_metrics.record_verification("skipped", "none")
-
-                # Store in cache and session history via Celery workers
-                from workers.tasks import index_cache_entry
-                index_cache_entry.delay(query, content)
-                await session_manager.add_message(
-                    sess_id,
-                    "assistant",
-                    content,
-                    metadata={
-                        "model": decision.model_name,
-                        "cached": False,
-                        "verified": confidence.verified,
-                        "overall_confidence": confidence.overall_confidence.value,
-                        "verification_confidence": confidence.verification_confidence.value,
-                        "math_check_passed": confidence.verified,
-                        "math_engine_result": math_result.result if math_result and math_result.success else None,
-                        "parser_source": confidence.parser_source,
-                        "parse_confidence": confidence.parse_confidence.value,
-                        "method": confidence.method,
-                        "topic_decision_type": topic_decision_type,
-                        "topic_decision_reason": topic_decision_reason,
-                    },
-                    block_id=block_id,
-                )
-                await topic_block_service.refresh_block_summary(block_id)
-
-                # Structured log per chat response
-                logger.info(
-                    "chat_stream_complete",
-                    user_id=user_id[:8],
-                    session_id=sess_id[:8],
-                    verified=confidence.verified,
-                    overall_confidence=confidence.overall_confidence.value,
-                    method=confidence.method,
-                    parser_source=confidence.parser_source,
-                    model=decision.model_name,
-                    has_math_intent=has_math_intent,
-                )
-
-        return streaming_service.create_sse_response(
-            cache_and_stream(token_stream, cleaned, session_id),
-            model_name=decision.model_name,
-            session_id=session_id,
-            done_meta={
-                "block_id": block_id,
-                "topic_decision_type": topic_decision_type,
-                "topic_decision_reason": topic_decision_reason,
-            },
-        )
-    except Exception as e:
-        raise AIServiceError(
-            f"Failed to stream response: {str(e)}",
-            provider=decision.provider.value,
-        )
+    return streaming_service.create_sse_response(
+        token_stream(),
+        model_name=result.response.model_used,
+        session_id=result.session_id,
+        done_meta={
+            "block_id": result.trace.block_id,
+            "topic_decision_type": result.topic_mode,
+            "intent": result.trace.intent,
+            "strategy": result.trace.strategy,
+            "tool_used": result.trace.tool_used,
+            "validation_passed": result.trace.validation_passed,
+        },
+    )

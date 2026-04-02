@@ -154,7 +154,7 @@ Vector Similarity Search (pgvector)
 | **Backend** | Python 3.11+, FastAPI, Uvicorn | REST API and business logic |
 | **AI Models** | DeepSeek R1/V3, Groq (Llama 3.3 70B), OpenAI | Multi-model LLM routing |
 | **Math Engine** | SymPy | Symbolic computation & verification |
-| **OCR** | Tesseract, pix2tex, Pillow | Image → text/LaTeX conversion |
+| **OCR** | Tesseract, Pillow, optional pix2tex | Image → text with optional LaTeX OCR conversion |
 | **Database** | PostgreSQL 16 (Supabase), pgvector | Relational data + vector embeddings |
 | **Cache** | Redis | Session cache, rate limiting, queue |
 | **Vector Storage** | pgvector (Supabase) | Semantic similarity search |
@@ -419,6 +419,9 @@ source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Optional: enable LaTeX OCR support via pix2tex
+pip install -r requirements-ocr.txt
 
 # Initialize database migrations
 alembic upgrade head
@@ -893,6 +896,7 @@ curl -X POST http://localhost:8000/api/solve \
    - Connect GitHub repo
    - Set root directory to `backend/`
    - Set build command: `pip install -r requirements.txt`
+   - If you need LaTeX OCR in production, append `&& pip install -r requirements-ocr.txt`
    - Set start command: `uvicorn main:app --host 0.0.0.0`
    - Add environment variables
 
@@ -959,6 +963,9 @@ We welcome contributions! Here's how to get started:
 cd backend
 source venv/bin/activate
 pip install -r requirements.txt
+
+# Optional: install LaTeX OCR dependencies
+pip install -r requirements-ocr.txt
 ```
 
 #### Issue: `Cannot connect to localhost:5432 (PostgreSQL)`

@@ -104,6 +104,70 @@ CREATE TABLE user_mistake_patterns (
 
 CREATE UNIQUE INDEX idx_user_mistake_patterns_unique
     ON user_mistake_patterns(user_id, topic, mistake_label);
+CREATE INDEX idx_user_mistake_patterns_recent
+    ON user_mistake_patterns(user_id, last_seen_at DESC);
+CREATE INDEX idx_user_mistake_patterns_frequency
+    ON user_mistake_patterns(user_id, frequency DESC);
+
+-- Student mastery per topic. Updated in-place after each learning interaction.
+CREATE TABLE user_topic_mastery (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id               UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject               VARCHAR(50),
+    topic                 VARCHAR(255) NOT NULL,
+    mastery_score         FLOAT NOT NULL DEFAULT 0.35 CHECK (mastery_score >= 0.0 AND mastery_score <= 1.0),
+    assumed_level         FLOAT NOT NULL DEFAULT 0.5 CHECK (assumed_level >= 0.0 AND assumed_level <= 1.0),
+    learning_velocity     FLOAT NOT NULL DEFAULT 0.0,
+    attempts              INTEGER NOT NULL DEFAULT 0,
+    successes             INTEGER NOT NULL DEFAULT 0,
+    failures              INTEGER NOT NULL DEFAULT 0,
+    consecutive_successes INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures  INTEGER NOT NULL DEFAULT 0,
+    hint_uses             INTEGER NOT NULL DEFAULT 0,
+    retry_count           INTEGER NOT NULL DEFAULT 0,
+    ask_simple_count      INTEGER NOT NULL DEFAULT 0,
+    is_weak               BOOLEAN NOT NULL DEFAULT FALSE,
+    last_interacted_at    TIMESTAMPTZ DEFAULT NOW(),
+    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_user_topic_mastery_unique
+    ON user_topic_mastery(user_id, topic);
+CREATE INDEX idx_user_topic_mastery_weak
+    ON user_topic_mastery(user_id, is_weak, mastery_score);
+CREATE INDEX idx_user_topic_mastery_recent
+    ON user_topic_mastery(user_id, updated_at DESC);
+
+-- Append-only learning ledger. One row per user-topic interaction.
+CREATE TABLE user_learning_events (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id          UUID REFERENCES sessions(id) ON DELETE SET NULL,
+    topic_mastery_id    UUID REFERENCES user_topic_mastery(id) ON DELETE SET NULL,
+    subject             VARCHAR(50),
+    topic               VARCHAR(255) NOT NULL,
+    event_type          VARCHAR(50) NOT NULL DEFAULT 'practice_interaction',
+    question_text       TEXT NOT NULL,
+    user_answer         TEXT,
+    assistant_response  TEXT,
+    success             BOOLEAN NOT NULL DEFAULT FALSE,
+    hints_used          INTEGER NOT NULL DEFAULT 0,
+    retry_count         INTEGER NOT NULL DEFAULT 0,
+    failure_reason      VARCHAR(100),
+    interaction_signals JSONB NOT NULL DEFAULT '{}',
+    detected_patterns   JSONB NOT NULL DEFAULT '[]',
+    mastery_before      FLOAT NOT NULL DEFAULT 0.35,
+    mastery_after       FLOAT NOT NULL DEFAULT 0.35,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_user_learning_events_user_time
+    ON user_learning_events(user_id, created_at DESC);
+CREATE INDEX idx_user_learning_events_topic_time
+    ON user_learning_events(user_id, topic, created_at DESC);
+CREATE INDEX idx_user_learning_events_success
+    ON user_learning_events(user_id, success, created_at DESC);
 
 -- ── Solves (completed problem solves) ────────────────
 CREATE TABLE solves (

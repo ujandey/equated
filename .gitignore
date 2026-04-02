@@ -4,6 +4,11 @@
 .env.*.local
 .env.production
 .env.staging
+backend/.env
+frontend/.env.local
+
+# ── Pytest cache (orphan temp dirs) ──
+pytest-cache-files-*/
 
 # ── Python ────────────────────────
 __pycache__/

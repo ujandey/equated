@@ -12,6 +12,7 @@ export interface Message {
     model?: string;
     cached?: boolean;
     tokens?: number;
+    duration?: number;
   };
 }
 

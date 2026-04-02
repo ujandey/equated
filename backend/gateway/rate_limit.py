@@ -67,7 +67,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """
         from cache.redis_cache import redis_client
 
-        count = await redis_client.client.incr(key)
-        if count == 1:
-            await redis_client.client.expire(key, 60)
-        return count <= limit
+        if not redis_client.client:
+            return True  # Allow requests if Redis is down
+
+        try:
+            count = await redis_client.client.incr(key)
+            if count == 1:
+                await redis_client.client.expire(key, 60)
+            return count <= limit
+        except Exception as e:
+            import logging
+            log = logging.getLogger("equated.gateway.rate_limit")
+            log.error(f"redis_operation_failed: {e}", exc_info=False)
+            return True  # Allow requests if Redis errors (fail open for availability)
