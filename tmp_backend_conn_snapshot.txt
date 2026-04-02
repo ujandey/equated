@@ -1,0 +1,116 @@
+"""
+Cache — Redis Client
+
+General-purpose Redis cache for:
+  - Solution result caching (query hash → response)
+  - Rate limit counters
+  - Session temp data
+"""
+
+import json
+import ssl
+import redis.asyncio as redis
+
+from config.settings import settings
+
+
+class RedisCache:
+    """Async Redis client wrapper."""
+
+    def __init__(self):
+        self.client: redis.Redis | None = None
+
+    async def connect(self):
+        """Initialize Redis connection."""
+        kwargs = dict(
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        # Upstash requires SSL but we need to skip cert verification
+        if settings.REDIS_URL.startswith("rediss://"):
+            kwargs["ssl_cert_reqs"] = None
+        self.client = redis.from_url(
+            settings.REDIS_URL,
+            **kwargs,
+        )
+
+    async def disconnect(self):
+        """Close Redis connection."""
+        if self.client:
+            await self.client.close()
+
+    async def get(self, key: str) -> str | None:
+        """Get a value by key."""
+        return await self.client.get(key)
+
+    async def set(self, key: str, value: str, ttl: int = 3600):
+        """Set a value with TTL (default 1 hour)."""
+        await self.client.set(key, value, ex=ttl)
+
+    async def set_nx(self, key: str, value: str, ttl: int = 60) -> bool:
+        """Set a value only if it does not exist (for locking). Returns True if set."""
+        result = await self.client.set(key, value, nx=True, ex=ttl)
+        return bool(result)
+
+    async def get_json(self, key: str) -> dict | None:
+        """Get and deserialize a JSON value."""
+        raw = await self.client.get(key)
+        if raw:
+            return json.loads(raw)
+        return None
+
+    async def set_json(self, key: str, data: dict, ttl: int = 3600):
+        """Serialize and store a JSON value."""
+        await self.client.set(key, json.dumps(data), ex=ttl)
+
+    async def delete(self, key: str):
+        """Delete a key."""
+        await self.client.delete(key)
+
+    async def exists(self, key: str) -> bool:
+        """Check if a key exists."""
+        return await self.client.exists(key) > 0
+
+    async def incr(self, key: str) -> int:
+        """Increment a counter."""
+        return await self.client.incr(key)
+
+
+# Singleton
+redis_client = RedisCache()
+"""
+DB — Connection Manager
+
+Async PostgreSQL connection pool using asyncpg.
+Used by all services that need database access.
+"""
+
+import asyncpg
+from config.settings import settings
+
+_pool: asyncpg.Pool | None = None
+
+
+async def init_db():
+    """Initialize the database connection pool."""
+    global _pool
+    _pool = await asyncpg.create_pool(
+        settings.DATABASE_URL,
+        min_size=2,
+        max_size=10,
+    )
+
+
+async def get_db() -> asyncpg.Pool:
+    """Get the database connection pool."""
+    if _pool is None:
+        await init_db()
+    return _pool
+
+
+async def close_db():
+    """Close the database connection pool."""
+    global _pool
+    if _pool:
+        await _pool.close()
+        _pool = None

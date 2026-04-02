@@ -34,10 +34,11 @@ class StreamingService:
         token_stream: AsyncIterator[str],
         model_name: str = "",
         session_id: str | None = None,
+        done_meta: dict | None = None,
     ) -> StreamingResponse:
         """Create an SSE StreamingResponse from an async token stream."""
         return StreamingResponse(
-            self._sse_generator(token_stream, model_name, session_id),
+            self._sse_generator(token_stream, model_name, session_id, done_meta),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -52,6 +53,7 @@ class StreamingService:
         token_stream: AsyncIterator[str],
         model_name: str,
         session_id: str | None,
+        done_meta: dict | None,
     ):
         """Generate SSE events from a token stream with step detection."""
         total_tokens = 0
@@ -87,6 +89,8 @@ class StreamingService:
                 "model": model_name,
                 "duration_ms": duration_ms,
             }
+            if done_meta:
+                done_event.update(done_meta)
             if session_id:
                 done_event["session_id"] = session_id
 

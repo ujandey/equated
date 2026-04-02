@@ -11,7 +11,7 @@ Keep this file in sync with that SQL file.
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean,
-    DateTime, ForeignKey, Text, func, Index
+    DateTime, ForeignKey, Text, func, Index, CheckConstraint
 )
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -137,6 +137,73 @@ class UserMistakePattern(Base):
     last_seen_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index('idx_user_mistake_patterns_unique', UserMistakePattern.user_id, UserMistakePattern.topic, UserMistakePattern.mistake_label, unique=True)
+Index('idx_user_mistake_patterns_recent', UserMistakePattern.user_id, UserMistakePattern.last_seen_at.desc())
+Index('idx_user_mistake_patterns_frequency', UserMistakePattern.user_id, UserMistakePattern.frequency.desc())
+
+
+class UserTopicMastery(Base):
+    __tablename__ = 'user_topic_mastery'
+    __table_args__ = (
+        CheckConstraint('mastery_score >= 0.0 AND mastery_score <= 1.0', name='ck_user_topic_mastery_score_range'),
+        CheckConstraint('assumed_level >= 0.0 AND assumed_level <= 1.0', name='ck_user_topic_mastery_assumed_level_range'),
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
+    user_id = Column(UUID(as_uuid=False), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    subject = Column(String(50), nullable=True)
+    topic = Column(String(255), nullable=False)
+    mastery_score = Column(Float, nullable=False, default=0.35)
+    assumed_level = Column(Float, nullable=False, default=0.5)
+    learning_velocity = Column(Float, nullable=False, default=0.0)
+    attempts = Column(Integer, nullable=False, default=0)
+    successes = Column(Integer, nullable=False, default=0)
+    failures = Column(Integer, nullable=False, default=0)
+    consecutive_successes = Column(Integer, nullable=False, default=0)
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    hint_uses = Column(Integer, nullable=False, default=0)
+    retry_count = Column(Integer, nullable=False, default=0)
+    ask_simple_count = Column(Integer, nullable=False, default=0)
+    is_weak = Column(Boolean, nullable=False, default=False)
+    last_interacted_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index('idx_user_topic_mastery_unique', UserTopicMastery.user_id, UserTopicMastery.topic, unique=True)
+Index('idx_user_topic_mastery_weak', UserTopicMastery.user_id, UserTopicMastery.is_weak, UserTopicMastery.mastery_score)
+Index('idx_user_topic_mastery_recent', UserTopicMastery.user_id, UserTopicMastery.updated_at.desc())
+
+
+class UserLearningEvent(Base):
+    __tablename__ = 'user_learning_events'
+
+    id = Column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
+    user_id = Column(UUID(as_uuid=False), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    session_id = Column(UUID(as_uuid=False), ForeignKey('sessions.id', ondelete='SET NULL'), nullable=True)
+    topic_mastery_id = Column(UUID(as_uuid=False), ForeignKey('user_topic_mastery.id', ondelete='SET NULL'), nullable=True)
+    subject = Column(String(50), nullable=True)
+    topic = Column(String(255), nullable=False)
+    event_type = Column(String(50), nullable=False, default='practice_interaction')
+    question_text = Column(Text, nullable=False)
+    user_answer = Column(Text, nullable=True)
+    assistant_response = Column(Text, nullable=True)
+    success = Column(Boolean, nullable=False, default=False)
+    hints_used = Column(Integer, nullable=False, default=0)
+    retry_count = Column(Integer, nullable=False, default=0)
+    failure_reason = Column(String(100), nullable=True)
+    interaction_signals = Column(JSONB, nullable=False, default={})
+    detected_patterns = Column(JSONB, nullable=False, default=[])
+    mastery_before = Column(Float, nullable=False, default=0.35)
+    mastery_after = Column(Float, nullable=False, default=0.35)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index('idx_user_learning_events_user_time', UserLearningEvent.user_id, UserLearningEvent.created_at.desc())
+Index('idx_user_learning_events_topic_time', UserLearningEvent.user_id, UserLearningEvent.topic, UserLearningEvent.created_at.desc())
+Index('idx_user_learning_events_success', UserLearningEvent.user_id, UserLearningEvent.success, UserLearningEvent.created_at.desc())
 
 
 class CreditTransaction(Base):

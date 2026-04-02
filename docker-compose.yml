@@ -9,7 +9,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - ./frontend/.env.example
+      - ./frontend/.env.local
     environment:
       - NEXT_INTERNAL_BACKEND_URL=http://backend:8000
     depends_on:
@@ -25,7 +25,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ./backend/.env.example
+      - ./backend/.env
     depends_on:
       - redis
       - postgres
@@ -65,7 +65,7 @@ services:
       dockerfile: Dockerfile
     command: celery -A workers.worker worker --loglevel=info
     env_file:
-      - ./backend/.env.example
+      - ./backend/.env
     depends_on:
       - redis
       - postgres

@@ -223,6 +223,14 @@ class TopicBlockService:
         )
         return self._row_to_block(row) if row else None
 
+    async def get_block(self, block_id: str) -> TopicBlock | None:
+        db = await get_db()
+        row = await db.fetchrow(
+            "SELECT * FROM topic_blocks WHERE id = $1",
+            block_id,
+        )
+        return self._row_to_block(row) if row else None
+
     async def get_recent_blocks(self, session_id: str, limit: int = 5) -> list[TopicBlock]:
         db = await get_db()
         rows = await db.fetch(

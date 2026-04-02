@@ -63,11 +63,22 @@ class QueryNormalizer:
 
         return q
 
-    def generate_cache_key(self, query: str) -> str:
-        """Generate a deterministic cache key from a query."""
+    def generate_cache_key(self, query: str, operation: str = "", expression: str = "") -> str:
+        """
+        Generate a deterministic cache key from a query.
+
+        When operation and expression are provided (from parse result),
+        they are included in the key to prevent collisions between
+        different operations on the same expression.
+        E.g., "solve x^2=4" and "differentiate x^2" will NOT collide.
+        """
         import hashlib
         normalized = self.normalize(query)
-        return hashlib.sha256(normalized.encode()).hexdigest()[:32]
+        if operation or expression:
+            composite = f"{normalized}|{operation.lower().strip()}|{expression.strip()}"
+        else:
+            composite = normalized
+        return hashlib.sha256(composite.encode()).hexdigest()[:32]
 
     def are_equivalent(self, query_a: str, query_b: str) -> bool:
         """Check if two queries normalize to the same form."""

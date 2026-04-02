@@ -33,6 +33,12 @@ class SolveResponse(BaseModel):
     alternative_method: str | None = None
     common_mistakes: str | None = None
     model_used: str = ""
+    parser_source: str | None = None
+    parser_confidence: str | None = None
+    verified: bool = False
+    verification_confidence: str | None = None
+    math_check_passed: bool = False
+    math_engine_result: str | None = None
     cached: bool = False
     credits_remaining: int | None = None
 

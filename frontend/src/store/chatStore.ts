@@ -5,6 +5,7 @@ interface ChatState {
   messages: Message[];
   sessionId: string | null;
   addMessage: (msg: Message) => void;
+  replaceMessages: (messages: Message[]) => void;
   clearMessages: () => void;
   setSessionId: (id: string) => void;
 }
@@ -15,6 +16,8 @@ export const useChatStore = create<ChatState>((set) => ({
 
   addMessage: (msg) =>
     set((state) => ({ messages: [...state.messages, msg] })),
+
+  replaceMessages: (messages) => set({ messages }),
 
   clearMessages: () => set({ messages: [] }),
 

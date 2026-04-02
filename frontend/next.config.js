@@ -2,6 +2,7 @@
 const nextConfig = {
   // Enable React strict mode for development
   reactStrictMode: true,
+  output: "standalone",
 
   // Backend API proxy to avoid CORS in development
   async rewrites() {

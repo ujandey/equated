@@ -90,12 +90,60 @@ async def razorpay_webhook(request: Request):
     """
     Razorpay webhook for payment events.
     Handles: payment.captured, payment.failed
+    
+    SECURITY: Verifies webhook signature using HMAC-SHA256 to prevent forged payments.
+    Only processes events with valid signatures from Razorpay.
     """
     import json
+    import hmac
+    import hashlib
+    import structlog
+    from fastapi import HTTPException
+    from config.settings import settings
+
+    logger = structlog.get_logger("equated.webhooks.razorpay")
+
+    # ── Guard: Razorpay must be fully configured ──
+    if not settings.razorpay_configured:
+        logger.warning("razorpay_webhook_not_configured")
+        raise HTTPException(
+            status_code=503,
+            detail="Payment processing is not configured. Contact support.",
+        )
+
+    # Get the raw request body
     body = await request.body()
-    event = json.loads(body)
+
+    # Extract signature from headers
+    signature = request.headers.get("X-Razorpay-Signature")
+    if not signature:
+        logger.warning("razorpay_webhook_missing_signature")
+        raise HTTPException(status_code=400, detail="Missing X-Razorpay-Signature header")
+
+    # Verify webhook signature using HMAC-SHA256
+    expected_signature = hmac.new(
+        settings.RAZORPAY_WEBHOOK_SECRET.encode(),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    # Use constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(signature, expected_signature):
+        logger.warning(
+            "razorpay_webhook_invalid_signature",
+            provided_sig=signature[:16],
+        )
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    # Signature verified ✓ — safe to process the event
+    try:
+        event = json.loads(body)
+    except json.JSONDecodeError:
+        logger.error("razorpay_webhook_malformed_json")
+        raise HTTPException(status_code=400, detail="Malformed JSON")
 
     event_type = event.get("event", "")
+    logger.info("razorpay_webhook_received", event_type=event_type)
 
     if event_type == "payment.captured":
         payment = event.get("payload", {}).get("payment", {}).get("entity", {})
@@ -105,12 +153,27 @@ async def razorpay_webhook(request: Request):
 
         if user_id and pack_id and pack_id in CREDIT_PACKS:
             pack = CREDIT_PACKS[pack_id]
+            logger.info(
+                "razorpay_payment_processed",
+                user_id=user_id[:8],
+                pack_id=pack_id,
+                credits=pack["credits"],
+            )
             await credit_service.add_credits(
                 user_id,
                 pack["credits"],
                 f"{pack_id} pack (webhook)",
                 payment.get("id", ""),
             )
+        else:
+            logger.warning(
+                "razorpay_payment_missing_notes",
+                has_user_id=bool(user_id),
+                has_pack_id=bool(pack_id),
+                valid_pack=pack_id in CREDIT_PACKS if pack_id else False,
+            )
+    elif event_type == "payment.failed":
+        logger.warning("razorpay_payment_failed", event=event)
 
     return {"status": "ok"}
 

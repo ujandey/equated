@@ -6,7 +6,7 @@ import { useChatStore } from "@/store/chatStore";
 import type { Message } from "@/types/message";
 
 export function useChat() {
-  const { messages, addMessage, sessionId, setSessionId } = useChatStore();
+  const { messages, addMessage, sessionId, setSessionId, replaceMessages } = useChatStore();
   const [isLoading, setIsLoading] = useState(false);
 
   const sendMessage = useCallback(
@@ -61,6 +61,7 @@ export function useChat() {
         let currentContent = "";
         let finalModel = "";
         let finalDuration = 0;
+        let contextReset = false;
 
         if (reader) {
           while (true) {
@@ -89,6 +90,7 @@ export function useChat() {
                     // Capture metadata and session_id upon completion
                     finalModel = event.model || "";
                     finalDuration = event.duration_ms || 0;
+                    contextReset = Boolean(event.context_reset);
                     
                     if (event.session_id) {
                        useChatStore.getState().setSessionId(event.session_id);
@@ -112,15 +114,25 @@ export function useChat() {
           
           // Final update with metadata
           if (finalModel) {
-             useChatStore.setState((state) => ({
-                messages: state.messages.map((m) =>
-                   m.id === assistantId ? { 
-                     ...m, 
-                     content: currentContent,
-                     metadata: { ...m.metadata, model: finalModel, duration: finalDuration }
-                   } : m
-                )
-             }));
+             const finalizeMessages = (stateMessages: Message[]) =>
+               stateMessages.map((m) =>
+                 m.id === assistantId ? {
+                   ...m,
+                   content: currentContent,
+                   metadata: { ...m.metadata, model: finalModel, duration: finalDuration }
+                 } : m
+               );
+
+             if (contextReset) {
+               const currentPair = useChatStore.getState().messages.filter(
+                 (m) => m.id === userMsg.id || m.id === assistantId
+               );
+               replaceMessages(finalizeMessages(currentPair));
+             } else {
+               useChatStore.setState((state) => ({
+                  messages: finalizeMessages(state.messages)
+               }));
+             }
           }
         }
       } catch (error) {
@@ -136,7 +148,7 @@ export function useChat() {
         setIsLoading(false);
       }
     },
-    [addMessage]
+    [addMessage, replaceMessages]
   );
 
   return { messages, isLoading, sendMessage };
