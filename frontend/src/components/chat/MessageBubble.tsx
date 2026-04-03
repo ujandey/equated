@@ -18,7 +18,7 @@ export function MessageBubble({ message }: Props) {
       <div className="max-w-3xl mx-auto mb-12 w-full animate-fade-in group">
         <div className="glass-panel border-l-2 border-primary/50 p-6 rounded-r-lg group-hover:border-primary transition-all">
           <p className="font-body text-[1.125rem] text-on-surface/80 leading-relaxed italic">
-            "{message.content}"
+            &quot;{message.content}&quot;
           </p>
           <span className="text-[10px] opacity-40 mt-4 block text-right font-mono tracking-widest uppercase">
             {new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -51,3 +51,4 @@ export function MessageBubble({ message }: Props) {
     </div>
   );
 }
+

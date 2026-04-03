@@ -4,7 +4,7 @@ Router — Ads Endpoints
 /api/v1/ads — ad eligibility, completion tracking, and config.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.dependencies import get_current_user
 from services.ads import ads_service
@@ -21,9 +21,11 @@ async def should_show_ad(user_id: str = Depends(get_current_user)):
 @router.post("/ads/watched")
 async def ad_watched(
     user_id: str = Depends(get_current_user),
-    ad_type: str = "rewarded_video",
+    ad_type: str = Query(default="rewarded_video"),
 ):
     """Record a completed ad watch and award credits."""
+    if ad_type != "rewarded_video":
+        raise HTTPException(status_code=400, detail="Invalid ad type")
     return await ads_service.record_ad_watched(user_id, ad_type)
 
 

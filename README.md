@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![Node.js 20.x](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org/)
 [![Built with FastAPI](https://img.shields.io/badge/FastAPI-0.109+-purple.svg)](https://fastapi.tiangolo.com/)
 [![Built with Next.js](https://img.shields.io/badge/Next.js-14+-black.svg)](https://nextjs.org/)
 
@@ -190,7 +190,7 @@ Before cloning and setting up the project, ensure you have the following install
 - **virtualenv** or `venv` (for isolated Python environments)
 
 #### For Frontend Development Only
-- **Node.js** (v18 or higher): [Download Node.js](https://nodejs.org/)
+- **Node.js** (v20.x for the frontend): [Download Node.js](https://nodejs.org/)
   - Verify: `node --version`
 - **npm** (v9 or higher, comes with Node.js)
   - Verify: `npm --version`

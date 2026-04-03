@@ -119,7 +119,7 @@ export default function HomePage() {
               <div className="ghost-symbol absolute -top-10 -left-6 text-[12rem] text-primary opacity-5 transition-all duration-300 group-hover:opacity-10 hidden md:block">∫</div>
               <div className="relative z-10 md:pt-12">
                 <h3 className="font-serif text-3xl text-on-surface mb-6">Theoretical Reasoning</h3>
-                <p className="font-mono text-sm text-outline leading-relaxed">We don't provide final values. We reconstruct the cognitive map required to derive them, emphasizing first principles over rote memorization.</p>
+                <p className="font-mono text-sm text-outline leading-relaxed">We don&apos;t provide final values. We reconstruct the cognitive map required to derive them, emphasizing first principles over rote memorization.</p>
               </div>
             </div>
 
@@ -128,7 +128,7 @@ export default function HomePage() {
               <div className="ghost-symbol absolute -top-10 -left-6 text-[12rem] text-secondary opacity-5 transition-all duration-300 group-hover:opacity-10 hidden md:block">∇</div>
               <div className="relative z-10 md:pt-12">
                 <h3 className="font-serif text-3xl text-on-surface mb-6">Concept-First Logic</h3>
-                <p className="font-mono text-sm text-outline leading-relaxed">Every solution starts with the 'Why'. We identify the core physical or mathematical law before a single calculation is performed.</p>
+                <p className="font-mono text-sm text-outline leading-relaxed">Every solution starts with the &apos;Why&apos;. We identify the core physical or mathematical law before a single calculation is performed.</p>
               </div>
             </div>
 
@@ -137,7 +137,7 @@ export default function HomePage() {
               <div className="ghost-symbol absolute -top-10 -left-6 text-[12rem] text-on-surface opacity-5 transition-all duration-300 group-hover:opacity-10 hidden md:block">Σ</div>
               <div className="relative z-10 md:pt-12">
                 <h3 className="font-serif text-3xl text-on-surface mb-6">Exam-Tuned Precision</h3>
-                <p className="font-mono text-sm text-outline leading-relaxed">Trained on thousands of past paper iterations. Accuracy isn't an aim; it's a computational constant verified by symbolic algebra.</p>
+                <p className="font-mono text-sm text-outline leading-relaxed">Trained on thousands of past paper iterations. Accuracy isn&apos;t an aim; it&apos;s a computational constant verified by symbolic algebra.</p>
               </div>
             </div>
           </div>
@@ -172,7 +172,7 @@ export default function HomePage() {
                 <div className="mb-12 relative z-10">
                   <div className="text-[10px] font-mono text-primary mb-2 uppercase tracking-[0.3em] font-bold">[PROMPT_SOLVER]</div>
                   <div className="font-serif text-lg md:text-2xl text-on-surface border-b border-white/10 pb-4">
-                    "Balance the reaction: MnO₄⁻ + Fe²⁺ → Mn²⁺ + Fe³⁺ in acidic medium."
+                    &quot;Balance the reaction: MnO₄⁻ + Fe²⁺ → Mn²⁺ + Fe³⁺ in acidic medium.&quot;
                   </div>
                 </div>
 
@@ -210,7 +210,7 @@ export default function HomePage() {
         <section className="px-6 md:px-12 py-32 md:py-40">
           <div className="max-w-4xl mx-auto text-center mb-24">
             <h2 className="font-serif text-4xl md:text-5xl text-on-surface mb-6 italic">Less than a cup of chai <br className="hidden md:block" /> per week.</h2>
-            <p className="font-mono text-[10px] md:text-xs text-outline uppercase tracking-[0.2em] md:tracking-[0.4em]">Uncompromised education shouldn't be a luxury.</p>
+            <p className="font-mono text-[10px] md:text-xs text-outline uppercase tracking-[0.2em] md:tracking-[0.4em]">Uncompromised education shouldn&apos;t be a luxury.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/5 rounded-2xl overflow-hidden max-w-5xl mx-auto border border-white/5">
@@ -285,3 +285,4 @@ export default function HomePage() {
     </div>
   );
 }
+

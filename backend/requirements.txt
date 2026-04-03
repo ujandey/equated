@@ -1,12 +1,14 @@
 # ── Core ──────────────────────────
-fastapi>=0.109.0
+fastapi>=0.116.2
+starlette>=0.47.2,<0.48.0
 uvicorn[standard]>=0.27.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
 # ── Auth ─────────────────────────
-PyJWT[cryptography]>=2.8.0   # [cryptography] extra required for RS256 support
+PyJWT>=2.12.0
+cryptography>=42.0.0         # required for RS256 support
 
 # ── AI / LLM ─────────────────────
 openai>=1.12.0               # DeepSeek & Groq use OpenAI-compatible API
@@ -45,4 +47,4 @@ pytest-asyncio>=0.23.0
 httpx                        # TestClient transport
 
 # ── Utilities ────────────────────
-python-multipart>=0.0.6
+python-multipart>=0.0.22

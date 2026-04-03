@@ -4,7 +4,7 @@ Router - Chat Endpoints
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_user
@@ -46,7 +46,7 @@ async def create_session(
 @router.get("/chat/sessions")
 async def list_sessions(
     user_id: str = Depends(get_current_user),
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
 ):
     sessions = await session_manager.list_sessions(user_id, limit)
     return {
@@ -113,7 +113,7 @@ async def delete_session(
 async def get_messages(
     session_id: str,
     user_id: str = Depends(get_current_user),
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=100),
 ):
     session = await session_manager.get_session(session_id)
     if not session or session.user_id != user_id:

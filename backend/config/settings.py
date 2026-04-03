@@ -5,6 +5,7 @@ Single source of truth for all environment variables.
 Uses Pydantic Settings for validation and type coercion.
 """
 
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -177,9 +178,11 @@ class Settings(BaseSettings):
 
         logger.info(f"Environment validated ({len(warnings)} warning(s))")
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 # Singleton instance — import this everywhere

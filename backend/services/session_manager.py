@@ -45,6 +45,8 @@ class SessionManager:
       - Persist to database (Supabase Postgres)
     """
 
+    ALLOWED_MESSAGE_ROLES = {"user", "assistant", "system"}
+
     async def create_session(self, user_id: str, title: str = "New Chat") -> Session:
         """Create a new chat session."""
         session = Session(user_id=user_id, title=title)
@@ -102,6 +104,9 @@ class SessionManager:
         block_id: str | None = None,
     ) -> Message:
         """Add a message to an existing session."""
+        if role not in self.ALLOWED_MESSAGE_ROLES:
+            raise ValueError("Invalid message role")
+
         msg = Message(role=role, content=content, metadata=metadata or {}, block_id=block_id)
 
         from db.connection import get_db
