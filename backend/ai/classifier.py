@@ -74,6 +74,7 @@ PHYSICS_PATTERNS = [
     r"\b(electric|magnetic|field|charge|voltage|current|resistance)\b",
     r"\b(wave|frequency|wavelength|amplitude|photon|quantum)\b",
     r"\b(thermodynamics|entropy|heat|temperature|pressure)\b",
+    r"\b(gauss'?s?\s+law|faraday'?s?\s+law|ampere'?s?\s+law|coulomb'?s?\s+law|ohm'?s?\s+law|lorentz force|maxwell'?s?\s+equations?)\b",
     r"\b(newton|joule|watt|pascal|hertz|coulomb|tesla)\b",
     r"\b(m/s|m/s²|kg|N|J|W|Pa|Hz|C|T|Ω)\b",
 ]

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     DEV_AUTH_USER_ID: str = "00000000-0000-4000-8000-000000000001"
     DEV_AUTH_EMAIL: str = "local-dev@equated.local"
     DEV_AUTH_NAME: str = "Local Dev User"
-    DEV_PRIMARY_PROVIDER: str = "groq"
+    DEV_PRIMARY_PROVIDER: str = "auto"
 
     # ── Feature Flags ───────────────────────
     ENABLE_STREAMING: bool = True

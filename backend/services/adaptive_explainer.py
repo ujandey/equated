@@ -91,7 +91,7 @@ PROMPT_TEMPLATES: dict[ExplanationLevel, PromptTemplate] = {
 class AdaptiveExplainerService:
     """Infers student level and generates level-aware explanations with an LLM."""
 
-    DEFAULT_PROVIDER_ORDER = ("openai", "deepseek", "gemini", "groq", "mistral")
+    DEFAULT_PROVIDER_ORDER = ("deepseek", "openai", "gemini", "groq", "mistral")
 
     def infer_level(self, student_model: dict[str, Any] | None) -> ExplanationLevel:
         """
@@ -131,6 +131,7 @@ class AdaptiveExplainerService:
         problem: str,
         solution: str,
         level: ExplanationLevel,
+        preferred_provider: str | None = None,
     ) -> str:
         """Generate an explanation using the first available LLM provider."""
         template = PROMPT_TEMPLATES[level]
@@ -142,23 +143,37 @@ class AdaptiveExplainerService:
             },
         ]
 
-        provider = self._select_provider()
-        model = get_model(provider)
-        response = await model.generate(
-            messages=messages,
-            max_tokens=900,
-            temperature=self._temperature_for_level(level),
-        )
+        last_error: Exception | None = None
+        for provider in self._provider_sequence(preferred_provider):
+            try:
+                model = get_model(provider)
+                response = await model.generate(
+                    messages=messages,
+                    max_tokens=900,
+                    temperature=self._temperature_for_level(level),
+                )
 
-        logger.info(
-            "adaptive_explanation_generated",
-            level=level,
-            provider=provider,
-            model=response.model,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-        )
-        return response.content.strip()
+                logger.info(
+                    "adaptive_explanation_generated",
+                    level=level,
+                    provider=provider,
+                    model=response.model,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                )
+                return response.content.strip()
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "adaptive_explanation_provider_failed",
+                    level=level,
+                    provider=provider,
+                    error=str(exc),
+                )
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("No AI provider configured for adaptive explanations.")
 
     async def generate_structured_explanation(
         self,
@@ -166,12 +181,23 @@ class AdaptiveExplainerService:
         solution: str,
         student_model: dict[str, Any] | None = None,
         level: ExplanationLevel | None = None,
+        preferred_provider: str | None = None,
+        prefer_existing_text: bool = False,
     ) -> tuple[StructuredExplanation, ExplanationLevel]:
         """
         Generate and parse a level-adaptive explanation into the standard schema.
         """
         resolved_level = level or self.infer_level(student_model)
-        adaptive_text = await self.generate_explanation(problem, solution, resolved_level)
+        if prefer_existing_text:
+            structured = explanation_generator.generate(solution, problem)
+            return structured, resolved_level
+
+        adaptive_text = await self.generate_explanation(
+            problem,
+            solution,
+            resolved_level,
+            preferred_provider=preferred_provider,
+        )
         structured = explanation_generator.generate(adaptive_text, problem)
         return structured, resolved_level
 
@@ -201,7 +227,7 @@ class AdaptiveExplainerService:
         except (TypeError, ValueError):
             return None
 
-    def _select_provider(self) -> str:
+    def _provider_sequence(self, preferred_provider: str | None = None) -> list[str]:
         provider_keys = {
             "openai": settings.OPENAI_API_KEY,
             "deepseek": settings.DEEPSEEK_API_KEY,
@@ -209,10 +235,20 @@ class AdaptiveExplainerService:
             "groq": settings.GROQ_API_KEY,
             "mistral": settings.MISTRAL_API_KEY,
         }
-        for provider in self.DEFAULT_PROVIDER_ORDER:
-            if settings._is_set(provider_keys[provider]):
-                return provider
+        ordered = list(self.DEFAULT_PROVIDER_ORDER)
+        if preferred_provider in provider_keys:
+            ordered = [preferred_provider] + [provider for provider in ordered if provider != preferred_provider]
 
+        return [
+            provider
+            for provider in ordered
+            if settings._is_set(provider_keys[provider])
+        ]
+
+    def _select_provider(self) -> str:
+        providers = self._provider_sequence()
+        if providers:
+            return providers[0]
         raise RuntimeError("No AI provider configured for adaptive explanations.")
 
     def _temperature_for_level(self, level: ExplanationLevel) -> float:

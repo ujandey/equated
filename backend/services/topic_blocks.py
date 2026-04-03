@@ -24,10 +24,35 @@ from db.connection import get_db
 
 logger = structlog.get_logger("equated.services.topic_blocks")
 
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "do", "for", "from", "give", "i",
+    "in", "is", "it", "me", "my", "now", "of", "on", "or", "please", "show", "that",
+    "the", "this", "to", "us", "we", "what", "why", "with", "write", "you",
+}
+_GENERIC_FOLLOW_UP_TOKENS = {
+    "again", "answer", "brief", "continue", "definition", "derive", "detail", "details",
+    "equation", "explain", "expression", "formula", "intuition", "law", "meaning",
+    "mathematical", "mathematically", "proof", "recap", "relation", "result", "rule",
+    "short", "shorter", "simple", "simpler", "simplify", "state", "statement", "step",
+    "summarize", "summary", "theorem",
+}
+
 
 ANCHOR_PATTERNS: list[tuple[str, str, float]] = [
     (r"\b(step\s+\d+)\b", "step_reference", 0.95),
     (r"\b(using that|use that|that value|this value|from above)\b", "value_reference", 0.9),
+    (
+        r"\b(now\s+)?(give|show|share|tell me|what is)(\s+the)?\s+"
+        r"(formula|equation|expression|result|answer|law|theorem|rule)\b",
+        "concept_reference",
+        0.93,
+    ),
+    (
+        r"\b(formula|equation|expression|result|answer)\s+(for|of|behind|used here)\b",
+        "concept_reference",
+        0.91,
+    ),
     (
         r"\b(explain( it| this| that)? simply|explain( it| this| that)? simpler|simplify|simpler|in short|again|"
         r"dumb it down|make it simple|easy version|short version|explain in simple words)\b",
@@ -83,10 +108,10 @@ class TopicBlockService:
     """
 
     THRESHOLD_PROFILES: dict[str, dict[str, float]] = {
-        "math": {"follow_up": 0.78, "same_topic": 0.60, "reopen": 0.74, "margin": 0.05, "anchor_min": 0.45},
-        "physics": {"follow_up": 0.74, "same_topic": 0.56, "reopen": 0.70, "margin": 0.05, "anchor_min": 0.42},
-        "chemistry": {"follow_up": 0.72, "same_topic": 0.54, "reopen": 0.68, "margin": 0.04, "anchor_min": 0.40},
-        "general": {"follow_up": 0.76, "same_topic": 0.58, "reopen": 0.72, "margin": 0.05, "anchor_min": 0.45},
+        "math": {"follow_up": 0.78, "same_topic": 0.60, "reopen": 0.74, "margin": 0.05, "anchor_min": 0.45, "lexical_follow_up": 0.72},
+        "physics": {"follow_up": 0.74, "same_topic": 0.56, "reopen": 0.70, "margin": 0.05, "anchor_min": 0.42, "lexical_follow_up": 0.70},
+        "chemistry": {"follow_up": 0.72, "same_topic": 0.54, "reopen": 0.68, "margin": 0.04, "anchor_min": 0.40, "lexical_follow_up": 0.68},
+        "general": {"follow_up": 0.76, "same_topic": 0.58, "reopen": 0.72, "margin": 0.05, "anchor_min": 0.45, "lexical_follow_up": 0.72},
     }
     EMBEDDING_MODEL_VERSION = embedding_generator.MODEL
     MAX_CONTEXT_MESSAGES = 6
@@ -108,6 +133,7 @@ class TopicBlockService:
             query_embedding,
             active_block.last_question_embedding if active_block else None,
         )
+        lexical_follow_up_score = self._lexical_follow_up_score(query, active_block) if active_block else 0.0
 
         scored_recent: list[tuple[TopicBlock, float]] = [
             (block, self._embedding_similarity(query_embedding, block.centroid_embedding))
@@ -133,6 +159,10 @@ class TopicBlockService:
         ):
             decision_type = "follow_up"
             reason = f"anchor:{anchor.kind}"
+            selected_block = active_block
+        elif active_block and lexical_follow_up_score >= thresholds["lexical_follow_up"]:
+            decision_type = "follow_up"
+            reason = "active_block_lexical_follow_up"
             selected_block = active_block
         elif active_block and sim_active >= thresholds["follow_up"]:
             decision_type = "follow_up"
@@ -163,11 +193,13 @@ class TopicBlockService:
         scores = {
             "sim_active_block": round(sim_active, 4),
             "sim_last_turn": round(sim_last_turn, 4),
+            "lexical_follow_up_score": round(lexical_follow_up_score, 4),
             "best_recent_score": round(best_recent_score, 4),
             "runner_up_recent_score": round(runner_up_score, 4),
             "recent_margin": round(margin, 4),
             "active_block_id": active_block.id if active_block else None,
             "best_recent_block_id": best_recent_block.id if best_recent_block else None,
+            "anchor_kind": anchor.kind,
             "anchor_confidence": round(anchor.confidence, 4),
         }
 
@@ -401,6 +433,28 @@ class TopicBlockService:
     def _topic_label(self, query: str, subject: str) -> str:
         lowered = query.strip().replace("\n", " ")
         return f"{subject}: {self._trim(lowered, 80)}"
+
+    def _lexical_follow_up_score(self, query: str, block: TopicBlock | None) -> float:
+        if not block:
+            return 0.0
+
+        query_tokens = self._content_tokens(query)
+        if not query_tokens:
+            return 1.0
+
+        context_text = " ".join(filter(None, [block.topic_label, block.summary]))
+        context_tokens = set(self._content_tokens(context_text))
+        overlap = len(set(query_tokens) & context_tokens) / max(len(set(query_tokens)), 1)
+        generic_ratio = sum(1 for token in query_tokens if token in _GENERIC_FOLLOW_UP_TOKENS) / max(len(query_tokens), 1)
+        short_bonus = 0.15 if len(query_tokens) <= 3 else 0.0
+        return min(1.0, (overlap * 0.55) + (generic_ratio * 0.55) + short_bonus)
+
+    def _content_tokens(self, text: str) -> list[str]:
+        return [
+            token
+            for token in _TOKEN_RE.findall((text or "").lower())
+            if len(token) > 1 and token not in _STOPWORDS
+        ]
 
     def _get_thresholds(self, subject: str) -> dict[str, float]:
         profile = self.THRESHOLD_PROFILES.get(subject, self.THRESHOLD_PROFILES["general"])

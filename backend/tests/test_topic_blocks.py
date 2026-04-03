@@ -189,3 +189,42 @@ async def test_route_query_reopens_best_recent_block(monkeypatch):
     assert decision.decision_type == "reopen_topic"
     assert seen["block_id"] == "block-reopen"
     assert seen["decision"].scores["best_recent_block_id"] == "block-reopen"
+
+
+@pytest.mark.asyncio
+async def test_route_query_concept_reference_overrides_low_similarity(monkeypatch):
+    active = _block("block-gauss", [1.0, 0.0], status="active")
+    seen = {}
+
+    async def fake_embed(_text: str):
+        return [0.0, 1.0]
+
+    async def fake_get_active_block(_session_id: str):
+        return active
+
+    async def fake_get_recent_blocks(_session_id: str, limit: int = 5):
+        return [active]
+
+    async def fake_set_active_block(block_id: str):
+        seen["block_id"] = block_id
+
+    async def fake_log_decision(session_id: str, query: str, decision):
+        seen["decision"] = decision
+
+    monkeypatch.setattr("services.topic_blocks.embedding_generator.generate", fake_embed)
+    monkeypatch.setattr(
+        "services.topic_blocks.classifier.classify",
+        lambda _query: Classification(subject=SubjectCategory.PHYSICS, complexity=ComplexityLevel.MEDIUM),
+    )
+    monkeypatch.setattr(topic_block_service, "get_active_block", fake_get_active_block)
+    monkeypatch.setattr(topic_block_service, "get_recent_blocks", fake_get_recent_blocks)
+    monkeypatch.setattr(topic_block_service, "set_active_block", fake_set_active_block)
+    monkeypatch.setattr(topic_block_service, "log_decision", fake_log_decision)
+
+    decision = await topic_block_service.route_query("session-1", "Now give formula")
+
+    assert decision.block_id == "block-gauss"
+    assert decision.decision_type == "follow_up"
+    assert decision.reason == "anchor:concept_reference"
+    assert seen["block_id"] == "block-gauss"
+    assert seen["decision"].anchor.kind == "concept_reference"
