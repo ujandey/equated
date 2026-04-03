@@ -5,6 +5,25 @@
   "engines": {
     "node": ">=20 <21"
   },
+  "overrides": {
+    "flatted": "^3.4.2",
+    "picomatch": "^4.0.4",
+    "anymatch": {
+      "picomatch": "^2.3.2"
+    },
+    "micromatch": {
+      "picomatch": "^2.3.2"
+    },
+    "readdirp": {
+      "picomatch": "^2.3.2"
+    },
+    "eslint": {
+      "brace-expansion": "^1.1.13"
+    },
+    "minimatch": {
+      "brace-expansion": "^1.1.13"
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +32,6 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.47.0",
-    "@supabase/ssr": "^0.1.0",
     "@supabase/supabase-js": "^2.39.0",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.11",
