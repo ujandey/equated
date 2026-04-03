@@ -5,7 +5,7 @@ Router — Admin Dashboard Endpoints
 Protected by admin role check.
 """
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Query
 
 from ai.cost_optimizer import cost_optimizer
 from cache.cache_metrics import cache_metrics
@@ -58,7 +58,7 @@ async def get_cache_stats(request: Request):
 
 
 @router.get("/user-usage")
-async def get_user_usage(request: Request, limit: int = 50):
+async def get_user_usage(request: Request, limit: int = Query(default=50, ge=1, le=200)):
     """Get top users by solve count."""
     await _require_admin(request)
     from db.connection import get_db

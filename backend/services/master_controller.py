@@ -1,4 +1,4 @@
-"""
+﻿"""
 Services - Master Controller
 
 Single authority for query handling across tutoring flows.
@@ -14,9 +14,9 @@ from typing import Any, Literal
 import structlog
 
 from ai.classifier import classifier
-from ai.fallback import fallback_handler
 from ai.pedagogical_router import build_strategy_system_prompt, route as route_pedagogy
-from ai.prompts import EXPLANATION_ONLY_SYSTEM_PROMPT, SOLVER_SYSTEM_PROMPT
+from ai.fallback import fallback_handler
+from ai.prompts import SOLVER_SYSTEM_PROMPT
 from ai.router import model_router
 from core.exceptions import AIServiceError
 from services.adaptive_explainer import adaptive_explainer
@@ -34,22 +34,23 @@ logger = structlog.get_logger("equated.services.master_controller")
 QueryIntent = Literal["solve", "explain", "follow_up", "unclear"]
 
 _SUPERSCRIPT_TRANSLATION = str.maketrans({
-    "²": "^2",
-    "³": "^3",
-    "⁰": "^0",
-    "¹": "^1",
-    "⁴": "^4",
-    "⁵": "^5",
-    "⁶": "^6",
-    "⁷": "^7",
-    "⁸": "^8",
-    "⁹": "^9",
+    "\u00B2": "^2",
+    "\u00B3": "^3",
+    "\u2070": "^0",
+    "\u00B9": "^1",
+    "\u2074": "^4",
+    "\u2075": "^5",
+    "\u2076": "^6",
+    "\u2077": "^7",
+    "\u2078": "^8",
+    "\u2079": "^9",
 })
 _SOLVE_RE = re.compile(r"\b(solve|find|compute|calculate|differentiate|derivative|integrate|integral|simplify|evaluate|limit)\b", re.IGNORECASE)
 _EXPLAIN_RE = re.compile(r"\b(explain|why|how|intuition|what is|meaning|simplify|simple|simply)\b", re.IGNORECASE)
 _FOLLOW_UP_RE = re.compile(r"\b(it|this|that|again|next step|continue|using that|from above)\b", re.IGNORECASE)
 _AMBIGUOUS_RE = re.compile(r"^\s*(help|please help|can you help|what about this)\s*$", re.IGNORECASE)
 _INCOMPLETE_DERIVATIVE_RE = re.compile(r"d\^?2?[a-z]/d[a-z]\^?2?$", re.IGNORECASE)
+_MULTI_INTENT_RE = re.compile(r"\b(and|also|plus)\b", re.IGNORECASE)
 
 
 @dataclass
@@ -213,10 +214,11 @@ class MasterController:
         )
 
     def normalize_input(self, query: str) -> str:
-        text = (query or "").translate(_SUPERSCRIPT_TRANSLATION)
+        text = (query or "").replace("\u00B2", "^2").replace("\u00B3", "^3")
+        text = text.translate(_SUPERSCRIPT_TRANSLATION)
         text = unicodedata.normalize("NFKC", text)
-        text = text.replace("−", "-").replace("–", "-").replace("—", "-")
-        text = text.replace("×", "*").replace("·", "*").replace("÷", "/")
+        text = text.replace("\u2212", "-").replace("\u2013", "-").replace("\u2014", "-")
+        text = text.replace("\u00D7", "*").replace("\u00B7", "*").replace("\u00F7", "/")
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
@@ -259,6 +261,8 @@ class MasterController:
     def _run_validation_gates(self, intent: QueryIntent, query: str) -> str | None:
         if intent == "unclear":
             return "Please clarify whether you want me to solve, explain, or check a specific problem."
+        if intent == "solve" and _EXPLAIN_RE.search(query) and _MULTI_INTENT_RE.search(query):
+            return "Please ask one task at a time: either solve the math problem or request a concept explanation."
         if intent == "solve" and self._requires_function_clarification(query):
             return "Please provide the function"
         if intent == "solve":
@@ -278,6 +282,10 @@ class MasterController:
         classification,
         credits_remaining: int | None,
     ) -> tuple[ControllerResponse, str]:
+        assert query.strip(), "Validation must run before solve pipeline"
+        if not is_math_like(query):
+            raise AssertionError("Solve pipeline received non-math input")
+
         extracted = symbolic_solver.extract_expression(query)
         symbolic_solution = symbolic_solver.solve_expression(extracted)
         if symbolic_solution.success and symbolic_solution.math_result:
@@ -304,42 +312,39 @@ class MasterController:
                 ),
                 "sympy",
             )
-
-        decision = model_router.route(classification)
-        messages = [
-            {"role": "system", "content": EXPLANATION_ONLY_SYSTEM_PROMPT},
-            {"role": "system", "content": build_strategy_system_prompt(pedagogical_decision)},
-            {"role": "system", "content": "Solve only the exact normalized expression from the pipeline. Do not invent or alter any expression."},
-            {"role": "user", "content": query},
-        ]
-        if coaching_decision:
-            messages.insert(2, {"role": "system", "content": coaching_decision["integration_prompt"]})
-        result = await fallback_handler.generate_with_fallback(messages, decision, user_id)
-        if not result:
-            raise AIServiceError("All AI models unavailable")
-        structured, _ = await adaptive_explainer.generate_structured_explanation(
-            problem=query,
-            solution=result.content,
-            student_model=student_state,
+        logger.warning(
+            "solve_validation_failed_before_symbolic",
+            user_id=user_id[:8],
+            query=query[:120],
+            reason=symbolic_solution.error or "symbolic_solver_failed",
         )
         confidence = compute_confidence_report(
             parse_confidence="low",
             verification_confidence="low",
             method="none",
-            parser_source="llm_fallback",
+            parser_source="symbolic_solver",
             math_check_passed=False,
             failure_reason="symbolic_solver_failed",
         )
+        clarification = symbolic_solution.error or "Please provide a valid mathematical expression so I can solve it deterministically."
         return (
-            self._assemble_response(
-                structured=structured,
-                confidence=confidence,
+            ControllerResponse(
+                final_answer="",
+                steps=[],
+                concept="",
+                simple_explanation=clarification,
                 coach_feedback=self._coach_feedback(coaching_decision),
-                model_used=result.model,
-                math_engine_result=None,
+                confidence=self._confidence_to_float(confidence.overall_confidence.value),
+                raw_text=clarification,
+                parser_source=confidence.parser_source,
+                verification_confidence=confidence.verification_confidence.value,
+                verified=False,
+                math_check_passed=False,
+                model_used="symbolic_guardrail",
+                clarification_request=clarification,
                 credits_remaining=credits_remaining,
             ),
-            "llm_fallback",
+            "validation",
         )
 
     async def _handle_explain(
@@ -552,3 +557,4 @@ class MasterController:
 
 
 master_controller = MasterController()
+

@@ -4,7 +4,7 @@ Router — Credits Endpoints
 /api/v1/credits — credit balance, purchase, transaction history, and Razorpay webhook.
 """
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, Query
 from pydantic import BaseModel
 
 from core.dependencies import get_current_user
@@ -181,7 +181,7 @@ async def razorpay_webhook(request: Request):
 @router.get("/credits/history")
 async def get_history(
     user_id: str = Depends(get_current_user),
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
 ):
     """Get credit transaction history."""
     transactions = await credit_service.get_transaction_history(user_id, limit)

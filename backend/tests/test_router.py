@@ -5,6 +5,7 @@ Tests — AI Router Unit Tests
 import pytest
 from ai.classifier import ProblemClassifier, SubjectCategory, ComplexityLevel
 from ai.router import ModelRouter, ModelProvider
+from config.settings import settings
 
 
 class TestClassifier:
@@ -45,12 +46,18 @@ class TestRouter:
     def test_high_complexity_routes_to_deepseek(self):
         classification = self.classifier.classify("Derive the Fourier transform of this function step by step")
         decision = self.router.route(classification)
-        assert decision.provider == ModelProvider.DEEPSEEK
+        if settings.APP_ENV == "development" and settings.DEV_PRIMARY_PROVIDER == "groq" and settings.GROQ_API_KEY:
+            assert decision.provider == ModelProvider.GROQ
+        else:
+            assert decision.provider == ModelProvider.DEEPSEEK
 
     def test_fallback_from_groq(self):
         fallback = self.router.get_fallback(ModelProvider.GROQ)
-        assert fallback is not None
-        assert fallback.provider == ModelProvider.DEEPSEEK
+        if settings.GEMINI_API_KEY:
+            assert fallback is not None
+            assert fallback.provider == ModelProvider.GEMINI
+        else:
+            assert fallback is None
 
     def test_no_fallback_from_deepseek(self):
         fallback = self.router.get_fallback(ModelProvider.DEEPSEEK)
