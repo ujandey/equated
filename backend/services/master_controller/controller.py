@@ -1,110 +1,34 @@
-"""
-Services - Master Controller
-
-Single authority for query handling across tutoring flows.
-"""
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import re
-import unicodedata
-from typing import Any, Literal
-
 import structlog
+from typing import Any
 
-from ai.classifier import Classification, ComplexityLevel, SubjectCategory, classifier
+from ai.classifier import classifier
 from ai.pedagogical_router import build_strategy_system_prompt, route as route_pedagogy
-from ai.fallback import fallback_handler
 from ai.prompts import CHAT_EXPLAIN_SYSTEM_PROMPT, SOLVER_SYSTEM_PROMPT
 from ai.router import model_router
-from core.exceptions import AIServiceError
+
 from services.adaptive_explainer import adaptive_explainer
-from services.confidence import ConfidenceReport, compute_confidence_report
+from services.confidence import compute_confidence_report
 from services.input_validator import input_validator
 from services.math_intent_detector import is_math_like
-from services.problem_solving_coach import problem_solving_coach
 from services.session_manager import session_manager
 from services.student_model import student_model_service
 from services.symbolic_solver import symbolic_solver
-from services.topic_blocks import AnchorMatch, TopicRoutingDecision, topic_block_service
+from services.topic_blocks import TopicRoutingDecision, topic_block_service
+
+# Local Decoupled Modules
+from services.master_controller.query_normalizer import query_normalizer
+from services.master_controller.intent_classifier import intent_classifier_service
+from services.master_controller.validation_gates import validation_gates_service
+from services.master_controller.response_assembler import response_assembler_service, ControllerResponse, ControllerResult, DecisionTrace
+from services.master_controller.fallback_handler import controller_fallback_handler
+
 
 logger = structlog.get_logger("equated.services.master_controller")
 
-QueryIntent = Literal["solve", "explain", "follow_up", "unclear"]
-
-_SUPERSCRIPT_TRANSLATION = str.maketrans({
-    "\u00B2": "^2",
-    "\u00B3": "^3",
-    "\u2070": "^0",
-    "\u00B9": "^1",
-    "\u2074": "^4",
-    "\u2075": "^5",
-    "\u2076": "^6",
-    "\u2077": "^7",
-    "\u2078": "^8",
-    "\u2079": "^9",
-})
-_SOLVE_RE = re.compile(r"\b(solve|find|compute|calculate|differentiate|derivative|integrate|integral|simplify|evaluate|limit)\b", re.IGNORECASE)
-_EXPLAIN_RE = re.compile(r"\b(explain|why|how|intuition|what is|meaning|simplify|simple|simply)\b", re.IGNORECASE)
-_FOLLOW_UP_RE = re.compile(
-    r"\b(it|this|that|again|next step|continue|using that|from above|formula|equation|expression|result)\b",
-    re.IGNORECASE,
-)
-_AMBIGUOUS_RE = re.compile(r"^\s*(help|please help|can you help|what about this)\s*$", re.IGNORECASE)
-_INCOMPLETE_DERIVATIVE_RE = re.compile(r"d\^?2?[a-z]/d[a-z]\^?2?$", re.IGNORECASE)
-_MULTI_INTENT_RE = re.compile(r"\b(and|also|plus)\b", re.IGNORECASE)
-
-
-@dataclass
-class DecisionTrace:
-    intent: QueryIntent
-    strategy: str
-    block_id: str | None
-    tool_used: str
-    validation_passed: bool
-    mode: str = "new_topic"
-    normalized_query: str = ""
-    subject: str | None = None
-    clarification: str | None = None
-
-
-@dataclass
-class ControllerResponse:
-    final_answer: str
-    steps: list[dict]
-    concept: str
-    simple_explanation: str
-    coach_feedback: str
-    confidence: float
-    raw_text: str
-    problem_interpretation: str = ""
-    quick_summary: str = ""
-    alternative_method: str | None = None
-    common_mistakes: str | None = None
-    parser_source: str | None = None
-    verification_confidence: str | None = None
-    verified: bool = False
-    math_check_passed: bool = False
-    math_engine_result: str | None = None
-    model_used: str = ""
-    clarification_request: str | None = None
-    credits_remaining: int | None = None
-
-
-@dataclass
-class ControllerResult:
-    response: ControllerResponse
-    trace: DecisionTrace
-    session_id: str | None = None
-    block_id: str | None = None
-    topic_mode: str = "new_topic"
-    pedagogical_decision: dict[str, Any] = field(default_factory=dict)
-    coaching_decision: dict[str, Any] = field(default_factory=dict)
-
-
 class MasterController:
-    """Single pipeline authority for normalization, validation, solving, explanation, and coaching."""
+    """Lean orchestrator for normalization, validation, solving, explanation, and coaching."""
 
     async def handle_query(
         self,
@@ -115,16 +39,16 @@ class MasterController:
         session_id: str | None = None,
         credits_remaining: int | None = None,
     ) -> ControllerResult:
-        normalized_query = self.normalize_input(query)
+        normalized_query = query_normalizer.normalize_input(query)
         validated_query = input_validator.validate_query(normalized_query)
 
-        base_intent = self.classify_intent(validated_query)
+        base_intent = intent_classifier_service.classify_intent(validated_query)
         session_id = await self._ensure_session(user_id=user_id, source=source, session_id=session_id)
         routing = await self._select_context(session_id=session_id, query=validated_query)
         student_state = await self._load_student_state(user_id)
-        intent = self._resolve_intent(base_intent, routing.anchor if routing else None)
+        intent = intent_classifier_service.resolve_intent(base_intent, routing.anchor if routing else None)
 
-        clarification = self._run_validation_gates(intent, validated_query)
+        clarification = validation_gates_service.run_validation_gates(intent, validated_query)
         if clarification:
             response = ControllerResponse(
                 final_answer="",
@@ -161,8 +85,8 @@ class MasterController:
             return ControllerResult(response=response, trace=trace, session_id=session_id, block_id=routing.block_id if routing else None, topic_mode=routing.decision_type if routing else "new_topic")
 
         pedagogical_decision = route_pedagogy(validated_query, student_state)
-        coaching_decision = self._build_coaching(validated_query)
-        classification = self._contextualize_classification(classifier.classify(validated_query), routing)
+        coaching_decision = response_assembler_service.build_coaching(validated_query)
+        classification = intent_classifier_service.contextualize_classification(classifier.classify(validated_query), routing)
 
         if intent == "solve":
             response, tool_used = await self._handle_solve(
@@ -216,26 +140,6 @@ class MasterController:
             coaching_decision=coaching_decision,
         )
 
-    def normalize_input(self, query: str) -> str:
-        text = (query or "").replace("\u00B2", "^2").replace("\u00B3", "^3")
-        text = text.translate(_SUPERSCRIPT_TRANSLATION)
-        text = unicodedata.normalize("NFKC", text)
-        text = text.replace("\u2212", "-").replace("\u2013", "-").replace("\u2014", "-")
-        text = text.replace("\u00D7", "*").replace("\u00B7", "*").replace("\u00F7", "/")
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
-
-    def classify_intent(self, query: str) -> QueryIntent:
-        if _AMBIGUOUS_RE.search(query):
-            return "unclear"
-        if _SOLVE_RE.search(query) and is_math_like(query):
-            return "solve"
-        if _EXPLAIN_RE.search(query):
-            return "explain"
-        if _FOLLOW_UP_RE.search(query):
-            return "follow_up"
-        return "unclear"
-
     async def _ensure_session(self, *, user_id: str, source: str, session_id: str | None) -> str | None:
         if session_id:
             return session_id
@@ -256,74 +160,6 @@ class MasterController:
             logger.warning("student_model_state_unavailable", error=str(exc), user_id=user_id[:8])
             return None
 
-    def _contextualize_classification(
-        self,
-        classification: Classification,
-        routing: TopicRoutingDecision | None,
-    ) -> Classification:
-        follow_up_modes = {"follow_up", "same_topic_new_question", "reopen_topic"}
-        if not routing or routing.decision_type not in follow_up_modes or not routing.subject:
-            return classification
-
-        try:
-            routed_subject = SubjectCategory(routing.subject)
-        except ValueError:
-            return classification
-
-        if not hasattr(classification, "subject") or not hasattr(classification, "complexity"):
-            return classification
-
-        adjusted_complexity = (
-            ComplexityLevel.MEDIUM
-            if classification.complexity == ComplexityLevel.LOW
-            else classification.complexity
-        )
-        adjusted_tokens = max(
-            getattr(classification, "tokens_est", 0),
-            1500 if routed_subject != SubjectCategory.GENERAL else 800,
-        )
-
-        if classification.subject == routed_subject and adjusted_complexity == classification.complexity:
-            return classification
-
-        logger.info(
-            "classification_context_override",
-            original_subject=classification.subject.value,
-            routed_subject=routed_subject.value,
-            decision_type=routing.decision_type,
-        )
-        return Classification(
-            subject=routed_subject,
-            complexity=adjusted_complexity,
-            confidence=max(classification.confidence, 0.85),
-            tokens_est=adjusted_tokens,
-            needs_steps=(routed_subject != SubjectCategory.GENERAL),
-        )
-
-    def _resolve_intent(self, intent: QueryIntent, anchor: AnchorMatch | None) -> QueryIntent:
-        if anchor and anchor.kind in {
-            "simplify_request",
-            "explanation_request",
-            "continuation",
-            "pronoun_reference",
-            "concept_reference",
-        }:
-            return "follow_up"
-        return intent
-
-    def _run_validation_gates(self, intent: QueryIntent, query: str) -> str | None:
-        if intent == "unclear":
-            return "Please clarify whether you want me to solve, explain, or check a specific problem."
-        if intent == "solve" and _EXPLAIN_RE.search(query) and _MULTI_INTENT_RE.search(query):
-            return "Please ask one task at a time: either solve the math problem or request a concept explanation."
-        if intent == "solve" and self._requires_function_clarification(query):
-            return "Please provide the function"
-        if intent == "solve":
-            extracted = symbolic_solver.extract_expression(query)
-            if extracted.needs_clarification or not extracted.expression:
-                return extracted.clarification_message or "Please provide the full mathematical expression."
-        return None
-
     async def _handle_solve(
         self,
         *,
@@ -343,13 +179,22 @@ class MasterController:
         extracted = symbolic_solver.extract_expression(query)
         symbolic_solution = symbolic_solver.solve_expression(extracted)
         if symbolic_solution.success and symbolic_solution.math_result:
+            
+            preferred_provider = None
+            try:
+                preferred_provider = model_router.route(classification).provider.value
+            except Exception:
+                pass
+                
             structured, _ = await adaptive_explainer.generate_structured_explanation(
                 problem=query,
-                solution=self._symbolic_payload(symbolic_solution),
+                solution=response_assembler_service.symbolic_payload(symbolic_solution),
                 student_model=student_state,
-                preferred_provider=self._preferred_provider_for_classification(classification),
+                preferred_provider=preferred_provider,
             )
-            structured = self._hydrate_structured_explanation(structured, structured.final_answer or self._symbolic_payload(symbolic_solution), query)
+            structured = response_assembler_service.hydrate_structured_explanation(
+                structured, structured.final_answer or response_assembler_service.symbolic_payload(symbolic_solution), query
+            )
             confidence = compute_confidence_report(
                 parse_confidence="high",
                 verification_confidence="high" if symbolic_solution.verified else "low",
@@ -358,16 +203,17 @@ class MasterController:
                 math_check_passed=symbolic_solution.verified,
             )
             return (
-                self._assemble_response(
+                response_assembler_service.assemble_response(
                     structured=structured,
                     confidence=confidence,
-                    coach_feedback=self._coach_feedback(coaching_decision),
+                    coach_feedback=response_assembler_service.coach_feedback(coaching_decision),
                     model_used="adaptive_explainer",
                     math_engine_result=symbolic_solution.math_result.result,
                     credits_remaining=credits_remaining,
                 ),
                 "sympy",
             )
+            
         logger.warning(
             "solve_validation_failed_before_symbolic",
             user_id=user_id[:8],
@@ -389,8 +235,8 @@ class MasterController:
                 steps=[],
                 concept="",
                 simple_explanation=clarification,
-                coach_feedback=self._coach_feedback(coaching_decision),
-                confidence=self._confidence_to_float(confidence.overall_confidence.value),
+                coach_feedback=response_assembler_service.coach_feedback(coaching_decision),
+                confidence=response_assembler_service.confidence_to_float(confidence.overall_confidence.value),
                 raw_text=clarification,
                 parser_source=confidence.parser_source,
                 verification_confidence=confidence.verification_confidence.value,
@@ -453,9 +299,10 @@ class MasterController:
         if routing and routing.anchor and routing.anchor.kind == "simplify_request":
             messages.append({"role": "system", "content": "This is a follow-up simplification request. Re-explain the same topic in simpler, analogy-first language."})
         messages.append({"role": "user", "content": query})
-        result = await fallback_handler.generate_with_fallback(messages, decision, user_id)
-        if not result:
-            raise AIServiceError("All AI models unavailable")
+        
+        # Invoke via new decoupled Circuit Breaker wrapper
+        result = await controller_fallback_handler.generate_with_fallback(messages, decision, user_id)
+        
         structured, _ = await adaptive_explainer.generate_structured_explanation(
             problem=query,
             solution=result.content,
@@ -464,7 +311,7 @@ class MasterController:
             preferred_provider=getattr(getattr(decision, "provider", None), "value", None),
             prefer_existing_text=True,
         )
-        structured = self._hydrate_structured_explanation(structured, result.content, query)
+        structured = response_assembler_service.hydrate_structured_explanation(structured, result.content, query)
         confidence = compute_confidence_report(
             parse_confidence="low",
             verification_confidence="low",
@@ -474,60 +321,16 @@ class MasterController:
             failure_reason="non_math_explanation",
         )
         return (
-            self._assemble_response(
+            response_assembler_service.assemble_response(
                 structured=structured,
                 confidence=confidence,
-                coach_feedback=self._coach_feedback(coaching_decision),
+                coach_feedback=response_assembler_service.coach_feedback(coaching_decision),
                 model_used=result.model,
                 math_engine_result=None,
                 credits_remaining=credits_remaining,
                 raw_text_override=result.content,
             ),
             "llm_explainer",
-        )
-
-    def _assemble_response(
-        self,
-        *,
-        structured,
-        confidence: ConfidenceReport,
-        coach_feedback: str,
-        model_used: str,
-        math_engine_result: str | None,
-        credits_remaining: int | None,
-        raw_text_override: str | None = None,
-    ) -> ControllerResponse:
-        raw_text = (
-            raw_text_override.strip()
-            if raw_text_override is not None
-            else self.render_response_text(
-                problem_interpretation=structured.problem_interpretation,
-                concept=structured.concept_used,
-                steps=structured.steps,
-                final_answer=structured.final_answer,
-                simple_explanation=structured.quick_summary,
-                coach_feedback=coach_feedback,
-            )
-        )
-        return ControllerResponse(
-            final_answer=structured.final_answer,
-            steps=structured.steps,
-            concept=structured.concept_used,
-            simple_explanation=structured.quick_summary,
-            coach_feedback=coach_feedback,
-            confidence=self._confidence_to_float(confidence.overall_confidence.value),
-            raw_text=raw_text,
-            problem_interpretation=structured.problem_interpretation,
-            quick_summary=structured.quick_summary,
-            alternative_method=structured.alternative_method,
-            common_mistakes=structured.common_mistakes,
-            parser_source=confidence.parser_source,
-            verification_confidence=confidence.verification_confidence.value,
-            verified=confidence.verified,
-            math_check_passed=confidence.verified,
-            math_engine_result=math_engine_result,
-            model_used=model_used,
-            credits_remaining=credits_remaining,
         )
 
     async def _update_state(
@@ -572,7 +375,7 @@ class MasterController:
                 subject=routing.subject,
                 topic=query,
                 session_id=session_id,
-                follow_up_anchor_kind=routing.anchor.kind,
+                follow_up_anchor_kind=routing.anchor.kind if routing.anchor else None,
                 topic_decision_type=routing.decision_type,
                 topic_question_count=0,
                 confidence=response.confidence,
@@ -588,80 +391,6 @@ class MasterController:
         except Exception as exc:
             logger.warning("student_model_update_failed", error=str(exc), user_id=user_id[:8], source="master_controller")
 
-    def render_response_text(
-        self,
-        *,
-        problem_interpretation: str,
-        concept: str,
-        steps: list[dict],
-        final_answer: str,
-        simple_explanation: str,
-        coach_feedback: str,
-    ) -> str:
-        lines = [
-            "**Problem Interpretation**",
-            problem_interpretation,
-            "",
-            "**Concept Used**",
-            concept,
-            "",
-            "**Step-by-Step Solution**",
-        ]
-        for step in steps:
-            lines.append(f"Step {step['step']}: {step['explanation']}")
-        lines.extend(["", "**Final Answer**", final_answer, "", "**Quick Summary**", simple_explanation])
-        if coach_feedback:
-            lines.extend(["", "**Coach Feedback**", coach_feedback])
-        return "\n".join(lines).strip()
-
-    def _symbolic_payload(self, symbolic_solution) -> str:
-        result = symbolic_solution.math_result
-        if not result:
-            return ""
-        steps = "\n".join(result.steps) if result.steps else "No intermediate steps available."
-        return f"Verified result: {result.result}\nDeterministic steps:\n{steps}"
-
-    def _hydrate_structured_explanation(self, structured, raw_text: str, query: str):
-        text = (raw_text or "").strip()
-        if not structured.problem_interpretation:
-            structured.problem_interpretation = query
-        if not structured.concept_used:
-            structured.concept_used = query
-        if not structured.steps:
-            structured.steps = [{"step": 1, "rule": "", "explanation": self._trim_text(text, 500)}]
-        if not structured.final_answer:
-            structured.final_answer = text
-        if not structured.quick_summary:
-            structured.quick_summary = self._trim_text(text, 280)
-        return structured
-
-    def _preferred_provider_for_classification(self, classification) -> str | None:
-        try:
-            return model_router.route(classification).provider.value
-        except Exception:
-            return None
-
-    def _trim_text(self, text: str, limit: int) -> str:
-        cleaned = (text or "").strip()
-        return cleaned if len(cleaned) <= limit else f"{cleaned[:limit].rstrip()}..."
-
-    def _build_coaching(self, query: str) -> dict[str, Any]:
-        if problem_solving_coach.should_coach(query):
-            return problem_solving_coach.suggest_improvement(query, query)
-        return {}
-
-    def _coach_feedback(self, coaching_decision: dict[str, Any]) -> str:
-        return " ".join(coaching_decision.get("suggestions") or [])
-
-    def _requires_function_clarification(self, query: str) -> bool:
-        lowered = query.lower().replace(" ", "")
-        if "d^2" in lowered and _INCOMPLETE_DERIVATIVE_RE.search(lowered):
-            return True
-        return False
-
-    def _confidence_to_float(self, level: str) -> float:
-        return {"high": 0.95, "medium": 0.7, "low": 0.35}.get(level, 0.35)
-
     def _log_trace(self, trace: DecisionTrace) -> None:
         logger.info(
             "master_controller_trace",
@@ -672,6 +401,4 @@ class MasterController:
             validation_passed=trace.validation_passed,
         )
 
-
 master_controller = MasterController()
-

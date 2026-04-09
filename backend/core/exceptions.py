@@ -102,6 +102,26 @@ class PromptInjectionError(EquatedError):
         super().__init__(message)
 
 
+# ── Resource Exhaustion ─────────────────────────
+class ResourceExhaustionError(EquatedError):
+    """SymPy execution exceeded resource limits (memory, CPU, nodes, expansion)."""
+    status_code = 429
+    error_code = "resource_exhaustion"
+
+    def __init__(self, message: str = "Expression exceeds computational complexity limits."):
+        super().__init__(message)
+
+
+# ── Node Capacity ───────────────────────────────
+class NodeCapacityError(EquatedError):
+    """Local node has reached its concurrency or memory limit."""
+    status_code = 503
+    error_code = "node_capacity"
+
+    def __init__(self, message: str = "Server at capacity. Please retry shortly.", retry_after: int = 5):
+        super().__init__(message, detail={"retry_after_seconds": retry_after})
+
+
 # ── Not Found ───────────────────────────────────────
 class NotFoundError(EquatedError):
     status_code = 404

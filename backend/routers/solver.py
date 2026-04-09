@@ -11,7 +11,17 @@ from services.master_controller import master_controller
 from services.rate_limiter import user_rate_limiter
 from services.streaming_service import streaming_service
 from services.credits import credit_service, MODEL_CREDIT_COSTS
-from core.exceptions import CreditError
+from core.exceptions import CreditError, NodeCapacityError, ResourceExhaustionError
+
+# Phase 2 Economic Controls
+from services.local_governor import local_governor
+from services.ast_guard import ast_guard
+from services.compute_budget import compute_budget
+from services.weighted_queue import wfq
+
+# Phase 3 Adversarial Intelligence
+from services.kill_storm_tracker import kill_storm_tracker
+from services.anti_gaming import AbuseThrottleMiddleware
 
 router = APIRouter()
 
@@ -24,34 +34,108 @@ async def solve_problem(req: SolveRequest, request: Request):
     if not limit_result["allowed"]:
         raise HTTPException(status_code=429, detail=limit_result["message"])
 
-    try:
-        result = await master_controller.handle_query(
-            user_id=user_id,
-            query=req.question,
-            source="solve",
-            session_id=req.session_id,
-            credits_remaining=limit_result["remaining"],
+    # --- Phase 3: Kill-Storm Defense Check ---
+    client_ip = request.client.host if request.client else "unknown"
+    blackhole = await kill_storm_tracker.check_blackhole(client_ip, user_id)
+    if blackhole.block:
+        raise HTTPException(
+            status_code=403, 
+            detail="Access temporarily restricted due to network instability. Please contact support if this persists."
         )
-    except Exception as e:
-        import structlog
-        log = structlog.get_logger("equated.routers.solver")
-        log.error("solve_failed", user_id=user_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Solve failed")
 
-    # ONLY DEDUCT CREDITS AFTER SUCCESSFUL SOLVE
+    # --- Phase 2: Full 5-Gate Economic Pipeline ---
+    
+    # ── Gate 1: Local Governor (Capacity) ──
+    if not await local_governor.acquire():
+        raise HTTPException(status_code=503, detail="Server at absolute capacity. Try again shortly.")
+        
     try:
-        cost = MODEL_CREDIT_COSTS.get(result.response.model_used, 3)
-        await credit_service.deduct_credits(
-            user_id=user_id,
-            cost=cost,
-            solve_id=result.session_id,  # session_id uniquely identifies solve context
-            model_name=result.response.model_used
-        )
-    except CreditError:
-        from db.connection import get_db
-        db = await get_db()
-        await db.execute("DELETE FROM solves WHERE session_id = $1", result.session_id)
-        raise HTTPException(status_code=402, detail="Insufficient credits")
+        # Pre-execution Model Selection
+        model_name = getattr(request.state, "fallback_model", "gemini-2.0-flash")
+        tier = limit_result.get("tier", "free")
+
+        # ── Gate 2: AST / Heuristics ──
+        # Note: req.question might contain text so AST is a heuristic here.
+        # Strict validation also runs inside symbolic_solver during actual compute.
+        is_global_anomaly = (blackhole.reason == "global_anomaly_active")
+        analysis = ast_guard.validate(req.question, strict_mode=is_global_anomaly)
+        if not analysis.safe:
+            # Phase 3: Record visible penalty box AST rejections
+            await AbuseThrottleMiddleware.record_ast_rejection(user_id)
+            raise HTTPException(status_code=429, detail=f"Request rejected due to complexity limits: {', '.join(analysis.violations)}")
+
+        # ── Gate 3: Pre-WFQ Sanity Check & Acquire ──
+        # Fix: Prevent empty users from trying to acquire a WFQ lock 
+        # and then failing on DB Reservation, temporarily wasting throughput
+        from config.settings import settings
+        if limit_result["remaining"] < settings.MIN_REQUIRED_CREDITS_HINT and tier != "free":
+             raise HTTPException(status_code=402, detail="Insufficient credits minimum floor. Please recharge to compute this request.")
+
+        weight = analysis.category_weight
+        if not await wfq.can_acquire_weight(user_id, weight):
+            raise HTTPException(status_code=503, detail="Compute queue full for this operation size. Try again.", headers={"Retry-After": "3"})
+
+        async with wfq.acquire(weight):
+            
+            # ── Gate 4: Compute Reservation ──
+            try:
+                reservation_id = await compute_budget.reserve(user_id, analysis, model_name)
+            except NodeCapacityError as nce:
+                raise HTTPException(status_code=503, detail=str(nce))
+            except CreditError as ce:
+                raise HTTPException(status_code=402, detail=str(ce))
+
+            try:
+                import time
+                start_time = time.perf_counter()
+
+                # Execution
+                result = await master_controller.handle_query(
+                    user_id=user_id,
+                    query=req.question,
+                    source="solve",
+                    session_id=req.session_id,
+                    credits_remaining=limit_result["remaining"],
+                )
+                
+                # Check for runtime fallback model override (e.g. LLM decided to use GPT-4)
+                if result and result.response and result.response.model_used:
+                    model_name = result.response.model_used
+                    
+                exec_time = time.perf_counter() - start_time
+
+            except Exception as e:
+                import structlog
+                log = structlog.get_logger("equated.routers.solver")
+                log.error("solve_failed", user_id=user_id, error=str(e))
+                # Refund automatically on crash
+                await compute_budget.settle(reservation_id, user_id, None, model_name, False)
+                
+                # Phase 3: Record sandbox/system kill for anti-gaming and kill-storm
+                await kill_storm_tracker.record_kill(client_ip, user_id, tier)
+                raise HTTPException(status_code=500, detail="Solve failed")
+
+            # ── Gate 5: Settlement ──
+            # Reconstruct dummy SandboxResult for settlement cost since master_controller 
+            # obscures the low level sandbox data from the router currently.
+            from core.contracts import SandboxResult
+            # We charge purely based on elapsed time here for the whole pipeline segment
+            dummy_sandbox = SandboxResult(
+                 success=True, result_text="", latex_result="", steps=(),
+                 error=None, compute_seconds=exec_time, node_count=0, peak_memory_kb=0,
+                 killed=False, kill_reason=None
+            )
+            
+            await compute_budget.settle(
+                reservation_id=reservation_id,
+                user_id=user_id,
+                sandbox_res=dummy_sandbox,
+                model_name=model_name,
+                has_llm_call=(result.response.model_used != "symbolic-engine")
+            )
+
+    finally:
+        await local_governor.release()
 
     if req.stream:
         async def token_stream():

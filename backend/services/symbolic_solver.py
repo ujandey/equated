@@ -16,9 +16,22 @@ from sympy import Abs, N, simplify, symbols
 from sympy.core.expr import Expr
 from sympy.core.relational import Relational
 
+import structlog
 from services.confidence import ConfidenceLevel
 from services.math_engine import MathResult, math_engine
 from services.math_intent_detector import is_math_like
+
+logger = structlog.get_logger("equated.services.symbolic_solver")
+
+# Lazy import to avoid circular dependency
+_ast_guard = None
+
+def _get_ast_guard():
+    global _ast_guard
+    if _ast_guard is None:
+        from services.ast_guard import ast_guard
+        _ast_guard = ast_guard
+    return _ast_guard
 
 
 _RAW_EXPRESSION_PATTERN = re.compile(
@@ -211,6 +224,25 @@ class SymbolicSolver:
     def _execute(self, request: ExtractedExpression) -> MathResult | None:
         expression = request.expression or ""
         variable = request.variable or self._infer_variable(expression) or "x"
+
+        # AST guard: validate before dispatching to SymPy
+        guard = _get_ast_guard()
+        analysis = guard.validate(expression)
+        if not analysis.safe:
+            logger.warning(
+                "symbolic_solver_ast_rejected",
+                operation=request.operation,
+                expression=expression[:100],
+                violations=analysis.violations,
+            )
+            return MathResult(
+                expression=expression,
+                result="",
+                latex_result="",
+                steps=[],
+                success=False,
+                error=f"Expression exceeds complexity limits: {'; '.join(analysis.violations)}",
+            )
 
         if request.operation == "solve":
             return math_engine.solve_equation(expression, variable)

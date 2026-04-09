@@ -17,6 +17,8 @@ from core.exceptions import register_exception_handlers
 from gateway.auth_middleware import AuthMiddleware
 from gateway.rate_limit import RateLimitMiddleware
 from gateway.request_logger import RequestLoggerMiddleware
+from gateway.load_shedder import LoadSheddingMiddleware
+from services.anti_gaming import AbuseThrottleMiddleware
 
 
 # ── Lifespan (startup + shutdown) ──────────────────
@@ -92,9 +94,15 @@ register_exception_handlers(app)
 
 
 # ── Middleware Stack (order matters: last added = outermost = runs first) ──
-# Starlette processes middleware in reverse order of add_middleware calls.
-# CORS must be outermost so it can add headers to ALL responses (including 401s).
+# Note: Middlewares execute in reverse order of addition.
+# 1. RequestLogger (outermost)
+# 2. RateLimit
+# 3. AbuseThrottle (delays users dynamically instead of ghost banning)
+# 4. LoadShedding (drops heavy ops based on capacity BEFORE auth)
+# 5. Auth (verifies tokens)
 app.add_middleware(AuthMiddleware)
+app.add_middleware(LoadSheddingMiddleware)
+app.add_middleware(AbuseThrottleMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
 app.add_middleware(

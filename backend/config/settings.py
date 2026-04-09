@@ -81,6 +81,63 @@ class Settings(BaseSettings):
     MAX_INPUT_LENGTH: int = 10000           # Max chars for query input
     MAX_IMAGE_SIZE_MB: int = 10             # Max image upload size
 
+    # ── AST Hard Limits (deterministic, no jitter) ──
+    MAX_EXPONENT_NESTING: int = 5           # Max chained ** depth
+    MAX_OPERATOR_COUNT: int = 50            # Total arithmetic + function operators
+    MAX_EXPRESSION_DEPTH: int = 15          # Parenthetical nesting depth
+    MAX_INTERMEDIATE_NODES: int = 10000     # SymPy intermediate node upper bound
+    MAX_SINGLE_EXPANSION: int = 300         # Per-node Pow expansion factor
+    MAX_TOTAL_EXPANSION: int = 600          # Cumulative expansion across all Pow nodes
+
+    # ── AST Margin Limits (jitter zone only) ──
+    MARGIN_OPERATOR_COUNT: int = 40         # Jitter zone: 40–50
+    MARGIN_EXPRESSION_DEPTH: int = 12       # Jitter zone: 12–15
+
+    # ── SymPy Subprocess Sandbox ────────────────
+    SYMPY_SUBPROCESS_TIMEOUT_S: int = 10    # Hard kill timeout
+    SYMPY_SUBPROCESS_MEMORY_MB: int = 256   # OS-level memory cap
+    SYMPY_SUBPROCESS_ENABLED: bool = True   # False = dev fallback (no isolation)
+    SANDBOX_MAX_INPUT_JSON_KB: int = 32     # IPC input size cap
+    SANDBOX_MAX_OUTPUT_JSON_KB: int = 64    # IPC output size cap
+    MAX_SANDBOX_PROCESSES: int = 6          # Max concurrent sandbox processes
+
+    # ── Local Node Sovereignty ─────────────────
+    LOCAL_MAX_CONCURRENCY: int = 8          # Normal mode limit
+    LOCAL_MAX_CONCURRENCY_DEGRADED: int = 4 # STRICTER when Redis down
+    LOCAL_MAX_MEMORY_MB: int = 512          # Per-node RSS ceiling
+    REDIS_HEALTH_HYSTERESIS_SECONDS: int = 10  # Stable window before mode switch
+
+    # ── Anti-Gaming Jitter ─────────────────────
+    HEURISTIC_JITTER_STDDEV: float = 0.15   # ±15% on MARGIN limits only
+
+    # ── WFQ Weight Constants (used by AST guard) ──
+    WFQ_HEAVY_WEIGHT: int = 5               # Weight units for heavy ops
+    WFQ_LIGHT_WEIGHT: int = 1               # Weight units for light ops
+    WFQ_GLOBAL_MAX_WEIGHT: int = 16         # Global max weight (LOCAL_MAX_CONCURRENCY * 2)
+
+    # ── Economic Controls ─────────────────────
+    MIN_REQUIRED_CREDITS_HINT: int = 1      # Quick sanity reject threshold
+    COMPUTE_CREDIT_RATE: float = 0.5        # 1 credit = 2 seconds compute
+
+    # ── Abuse Throttle (Phase 3) ─────────────
+    ABUSE_THROTTLE_DELAY_MIN_S: float = 1.5
+    ABUSE_THROTTLE_DELAY_MAX_S: float = 3.5
+    ABUSE_THROTTLE_MESSAGE: str = "Your request is being processed with reduced priority due to unusual activity patterns."
+    ABUSE_TRIGGER_AST_REJECTIONS: int = 3
+    ABUSE_TRIGGER_KILLS: int = 2
+
+    # ── Kill-Storm (Phase 3) ─────────────────
+    KILL_STORM_WINDOW_SECONDS: int = 60
+    KILL_STORM_LONG_WINDOW_SECONDS: int = 300
+    KILL_STORM_THRESHOLD_PER_IP: int = 5
+    KILL_STORM_THRESHOLD_PER_SUBNET: int = 15
+    KILL_STORM_SUBNET_MIN_USERS: int = 3
+    KILL_STORM_MIN_AUTH_RATIO: float = 0.5  # Ignore diversity if largely unauthenticated
+    KILL_STORM_GLOBAL_THRESHOLD: int = 20
+
+    # ── Cache Eviction (Phase 3) ─────────────
+    CACHE_MIN_HITS_FOR_RETENTION: int = 2
+
     # ── Placeholder detection ────────────────
     _PLACEHOLDER_VALUES: set = {
         "your-deepseek-key", "your-groq-key", "your-openai-key",

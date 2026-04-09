@@ -21,6 +21,16 @@ from services.math_engine import MathResult, math_engine
 
 logger = structlog.get_logger("equated.hybrid_math_parser")
 
+# Lazy import to avoid circular dependency at module level
+_ast_guard = None
+
+def _get_ast_guard():
+    global _ast_guard
+    if _ast_guard is None:
+        from services.ast_guard import ast_guard
+        _ast_guard = ast_guard
+    return _ast_guard
+
 PARSER_PROMPT_TEMPLATE = """You are a mathematical parser.
 
 Convert the user query into STRICT JSON for symbolic computation.
@@ -489,8 +499,21 @@ class HybridMathParser:
 
     def safe_parse(self, expr: str):
         """Validate a candidate SymPy expression before execution."""
+        normalized = self._normalize_expression(expr)
+
+        # AST guard pre-check: reject expressions that exceed complexity limits
+        guard = _get_ast_guard()
+        analysis = guard.validate(normalized)
+        if not analysis.safe:
+            logger.warning(
+                "safe_parse_ast_rejected",
+                expression=normalized[:100],
+                violations=analysis.violations,
+            )
+            return None
+
         try:
-            return math_engine.parse_symbolic_expression(self._normalize_expression(expr))
+            return math_engine.parse_symbolic_expression(normalized)
         except Exception:
             return None
 
@@ -499,6 +522,23 @@ class HybridMathParser:
         operation = parsed.operation
         expression = self._normalize_expression(parsed.expression)
         variable = parsed.variable or self._infer_variable(expression)
+
+        # AST guard: validate and tag compute category for WFQ (Phase 2)
+        guard = _get_ast_guard()
+        analysis = guard.validate(expression)
+        if not analysis.safe:
+            logger.warning(
+                "dry_run_ast_rejected",
+                operation=operation,
+                expression=expression[:100],
+                violations=analysis.violations,
+            )
+            return None
+
+        # Tag compute metadata in extra for downstream WFQ consumption
+        parsed.extra["compute_category"] = analysis.category
+        parsed.extra["compute_weight"] = analysis.category_weight
+        parsed.extra["ast_expansion"] = analysis.estimated_expansion
 
         try:
             if operation == "solve":

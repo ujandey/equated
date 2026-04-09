@@ -65,6 +65,52 @@ DAILY_COST_USD = Gauge(
     "Today's total AI API cost in USD",
 )
 
+# ── Phase 3 Adversarial Resilience Metrics (Cardinality Safe) ──
+LOAD_SHED_TOTAL = Counter(
+    "equated_load_shed_total",
+    "Total requests intentionally dropped or degraded by the Gateway",
+    ["tier", "action"] # Action: dropped vs degraded
+)
+
+COMPUTE_RESERVATIONS_TOTAL = Counter(
+    "equated_compute_reservations_total",
+    "Total abstract reservations pushed onto DB",
+    ["result"] # success, failed_griefing, failed_credits
+)
+
+KILL_STORM_BLOCKS_TOTAL = Counter(
+    "equated_kill_storm_blocks_total",
+    "Total network traffic blocks created by system instability detection",
+    ["scope"] # user, ip, subnet
+)
+
+WFQ_ACTIVITY = Counter(
+    "equated_wfq_total",
+    "Tracked weighted fair queue actions",
+    ["tier", "result"] # allowed, penalty_increment, penalty_decay
+)
+
+ABUSE_THROTTLES_TOTAL = Counter(
+    "equated_abuse_throttled_total",
+    "Total counts of user delays instantiated via AntiGaming system",
+)
+
+SANDBOX_KILLS_TOTAL = Counter(
+    "equated_sandbox_kills_total",
+    "Total actual subprocess terminations indicating semantic bombs triggered",
+    ["reason"] # memory, timeout, protocol_violation
+)
+
+LOCAL_GOVERNOR_ACTIVE = Gauge(
+    "equated_local_governor_active",
+    "Current slots reserved by execution threads locally",
+)
+
+LOCAL_GOVERNOR_MODE = Gauge(
+    "equated_local_governor_mode",
+    "Current state of local governor (1=normal, 0=strict degraded mode)"
+)
+
 
 def init_metrics():
     """Initialize metrics (called on app startup)."""

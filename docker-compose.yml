@@ -31,6 +31,10 @@ services:
       - postgres
     networks:
       - equated-network
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   # ── Redis (Cache + Queue) ──────────────────
   redis:
