@@ -450,7 +450,7 @@ class MasterController:
                     decision_type=routing.decision_type,
                     error=str(exc),
                 )
-        if routing and routing.anchor.kind == "simplify_request":
+        if routing and routing.anchor and routing.anchor.kind == "simplify_request":
             messages.append({"role": "system", "content": "This is a follow-up simplification request. Re-explain the same topic in simpler, analogy-first language."})
         messages.append({"role": "user", "content": query})
         result = await fallback_handler.generate_with_fallback(messages, decision, user_id)
@@ -460,7 +460,7 @@ class MasterController:
             problem=query,
             solution=result.content,
             student_model=student_state,
-            level="beginner" if routing and routing.anchor.kind == "simplify_request" else None,
+            level="beginner" if routing and routing.anchor and routing.anchor.kind == "simplify_request" else None,
             preferred_provider=getattr(getattr(decision, "provider", None), "value", None),
             prefer_existing_text=True,
         )
