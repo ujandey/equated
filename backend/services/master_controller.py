@@ -1,4 +1,4 @@
-﻿"""
+"""
 Services - Master Controller
 
 Single authority for query handling across tutoring flows.
@@ -335,9 +335,10 @@ class MasterController:
         classification,
         credits_remaining: int | None,
     ) -> tuple[ControllerResponse, str]:
-        assert query.strip(), "Validation must run before solve pipeline"
+        if not query.strip():
+            raise ValueError("Validation must run before solve pipeline")
         if not is_math_like(query):
-            raise AssertionError("Solve pipeline received non-math input")
+            raise ValueError("Solve pipeline received non-math input")
 
         extracted = symbolic_solver.extract_expression(query)
         symbolic_solution = symbolic_solver.solve_expression(extracted)
