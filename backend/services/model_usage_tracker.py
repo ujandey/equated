@@ -123,8 +123,8 @@ class ModelUsageTracker:
                       SUM(cost_usd) as total_cost,
                       SUM(input_tokens + output_tokens) as total_tokens
                FROM model_usage
-               WHERE user_id = $1 AND created_at > NOW() - INTERVAL '%s days'""" % days,
-            user_id,
+               WHERE user_id = $1 AND created_at > NOW() - make_interval(days => $2)""",
+            user_id, days,
         )
 
         return {
