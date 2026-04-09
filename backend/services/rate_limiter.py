@@ -46,6 +46,39 @@ class UserRateLimiter:
         else:
             return await self._check_paid_tier(db, user_id, credits)
 
+    async def check_limit(self, user_id: str) -> dict:
+        """
+        Check if user can solve WITHOUT deducting credits.
+        """
+        from db.connection import get_db
+        db = await get_db()
+
+        user = await db.fetchrow(
+            "SELECT credits, tier FROM users WHERE id = $1", user_id
+        )
+        if not user:
+            return {"allowed": False, "remaining": 0, "tier": "unknown", "message": "User not found"}
+
+        tier = user["tier"] or "free"
+        credits = user["credits"] or 0
+
+        if tier == "free":
+            return await self._check_free_tier(db, user_id)
+        else:
+            if credits <= 0:
+                return {
+                    "allowed": False,
+                    "remaining": 0,
+                    "tier": "paid",
+                    "message": "No credits remaining. Purchase a credit pack.",
+                }
+            return {
+                "allowed": True,
+                "remaining": credits,
+                "tier": "paid",
+                "message": f"{credits} credits remaining.",
+            }
+
     async def _check_free_tier(self, db, user_id: str) -> dict:
         """Check free tier daily limit."""
         today = date.today()

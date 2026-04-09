@@ -10,6 +10,8 @@ from db.models import SolveRequest, SolveResponse
 from services.master_controller import master_controller
 from services.rate_limiter import user_rate_limiter
 from services.streaming_service import streaming_service
+from services.credits import credit_service, MODEL_CREDIT_COSTS
+from core.exceptions import CreditError
 
 router = APIRouter()
 
@@ -18,17 +20,38 @@ router = APIRouter()
 async def solve_problem(req: SolveRequest, request: Request):
     user_id = request.state.user_id
 
-    limit_result = await user_rate_limiter.check_and_deduct(user_id)
+    limit_result = await user_rate_limiter.check_limit(user_id)
     if not limit_result["allowed"]:
         raise HTTPException(status_code=429, detail=limit_result["message"])
 
-    result = await master_controller.handle_query(
-        user_id=user_id,
-        query=req.question,
-        source="solve",
-        session_id=req.session_id,
-        credits_remaining=limit_result["remaining"],
-    )
+    try:
+        result = await master_controller.handle_query(
+            user_id=user_id,
+            query=req.question,
+            source="solve",
+            session_id=req.session_id,
+            credits_remaining=limit_result["remaining"],
+        )
+    except Exception as e:
+        import structlog
+        log = structlog.get_logger("equated.routers.solver")
+        log.error("solve_failed", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Solve failed")
+
+    # ONLY DEDUCT CREDITS AFTER SUCCESSFUL SOLVE
+    try:
+        cost = MODEL_CREDIT_COSTS.get(result.response.model_used, 3)
+        await credit_service.deduct_credits(
+            user_id=user_id,
+            cost=cost,
+            solve_id=result.session_id,  # session_id uniquely identifies solve context
+            model_name=result.response.model_used
+        )
+    except CreditError:
+        from db.connection import get_db
+        db = await get_db()
+        await db.execute("DELETE FROM solves WHERE session_id = $1", result.session_id)
+        raise HTTPException(status_code=402, detail="Insufficient credits")
 
     if req.stream:
         async def token_stream():

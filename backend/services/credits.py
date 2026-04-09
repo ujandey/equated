@@ -173,6 +173,34 @@ class CreditService:
             "message": f"{new_balance} credits remaining (-{cost} for {model_name}).",
         }
 
+    async def deduct_credits(self, user_id: str, cost: int, solve_id: str, model_name: str):
+        """
+        Atomically deduct credits after a successful solve.
+        Raises CreditError if the user is out of credits.
+        """
+        from db.connection import get_db
+        from core.exceptions import CreditError
+        db = await get_db()
+        
+        user = await db.fetchrow("SELECT tier FROM users WHERE id = $1", user_id)
+        if not user or user["tier"] == "free" or cost == 0:
+            return  # Free tier users and free models do not deduct balance explicitly
+            
+        result = await db.fetchrow(
+            """UPDATE users SET credits = credits - $1 
+               WHERE id = $2 AND credits >= $1
+               RETURNING credits""",
+            cost, user_id
+        )
+        if not result:
+            raise CreditError("Insufficient credits")
+            
+        await db.execute(
+            """INSERT INTO credit_transactions (user_id, amount, type, description)
+               VALUES ($1, $2, 'deduction', $3)""",
+            user_id, -cost, f"Problem solve ({model_name})"
+        )
+
     async def add_credits(self, user_id: str, amount: int, reason: str, payment_id: str = ""):
         """Add credits to a user's account."""
         from db.connection import get_db
