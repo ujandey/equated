@@ -37,7 +37,7 @@ numpy>=1.26.0                # vector operations for embeddings
 celery[redis]>=5.3.0
 
 # ── Monitoring ───────────────────
-sentry-sdk[fastapi]>=1.40.0
+sentry-sdk[fastapi]>=2.8.0
 prometheus-client>=0.20.0
 structlog>=24.1.0
 
