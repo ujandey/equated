@@ -1,11 +1,17 @@
 # ── Environment files ─────────────
+# Block ALL .env variants first
 .env
-.env.local
-.env.*.local
-.env.production
-.env.staging
+.env.*
+# Then explicitly allow the safe example file
+!.env.example
+# Subdirectory env files
 backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
 frontend/.env.local
+!frontend/.env.example
 
 # ── Pytest cache (orphan temp dirs) ──
 pytest-cache-files-*/
