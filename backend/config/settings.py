@@ -59,11 +59,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 30
     FREE_TIER_DAILY_SOLVES: int = 5
 
-    # Development auth fallback
-    ENABLE_DEV_AUTH_BYPASS: bool = True
-    DEV_AUTH_USER_ID: str = "00000000-0000-4000-8000-000000000001"
-    DEV_AUTH_EMAIL: str = "local-dev@equated.local"
-    DEV_AUTH_NAME: str = "Local Dev User"
+    # Development fallback
     DEV_PRIMARY_PROVIDER: str = "auto"
 
     # ── Feature Flags ───────────────────────
