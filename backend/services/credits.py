@@ -178,6 +178,15 @@ class CreditService:
         from db.connection import get_db
         db = await get_db()
 
+        # Idempotency check: prevent double-crediting for the same payment
+        if payment_id:
+            existing = await db.fetchrow(
+                "SELECT id FROM credit_transactions WHERE payment_id = $1", payment_id
+            )
+            if existing:
+                logger.warning("duplicate_payment_processed", user_id=user_id, payment_id=payment_id)
+                return  # Skip silently to handle webhook & client race conditions gracefully
+
         await db.execute(
             "UPDATE users SET credits = credits + $1, tier = 'paid' WHERE id = $2",
             amount, user_id,

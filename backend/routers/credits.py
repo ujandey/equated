@@ -66,13 +66,15 @@ async def purchase_credits(
 
     pack = CREDIT_PACKS[req.pack_id]
 
-    # Verify Razorpay payment if signature provided
-    if req.signature and req.order_id:
-        is_valid = await credit_service.verify_razorpay_payment(
-            req.payment_id, req.order_id, req.signature
-        )
-        if not is_valid:
-            raise ValidationError("Payment verification failed")
+    # Prevent payment verification bypass: Must always verify Razorpay signatures
+    if not req.signature or not req.order_id or not req.payment_id:
+        raise ValidationError("Missing payment verification details (signature, order_id, or payment_id)")
+
+    is_valid = await credit_service.verify_razorpay_payment(
+        req.payment_id, req.order_id, req.signature
+    )
+    if not is_valid:
+        raise ValidationError("Payment verification failed")
 
     # Add credits
     await credit_service.add_credits(
