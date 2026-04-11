@@ -154,6 +154,7 @@ async def solve_problem(req: SolveRequest, request: Request):
                 "block_id": result.trace.block_id,
                 "tool_used": result.trace.tool_used,
                 "validation_passed": result.trace.validation_passed,
+                **({"debug": {**result.debug_plan, "execution_echo": result.execution_echo}} if req.debug else {}),
             },
         )
 
@@ -175,4 +176,5 @@ async def solve_problem(req: SolveRequest, request: Request):
         math_engine_result=result.response.math_engine_result,
         cached=False,
         credits_remaining=result.response.credits_remaining,
+        debug={**result.debug_plan, "execution_echo": result.execution_echo} if req.debug else None,
     )

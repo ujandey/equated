@@ -132,6 +132,7 @@ class AdaptiveExplainerService:
         solution: str,
         level: ExplanationLevel,
         preferred_provider: str | None = None,
+        teaching_directives: list[str] | None = None,
     ) -> str:
         """Generate an explanation using the first available LLM provider."""
         template = PROMPT_TEMPLATES[level]
@@ -139,7 +140,12 @@ class AdaptiveExplainerService:
             {"role": "system", "content": template.system},
             {
                 "role": "user",
-                "content": template.user.format(problem=problem.strip(), solution=solution.strip()),
+                "content": self._build_user_prompt(
+                    template=template,
+                    problem=problem,
+                    solution=solution,
+                    teaching_directives=teaching_directives,
+                ),
             },
         ]
 
@@ -183,6 +189,7 @@ class AdaptiveExplainerService:
         level: ExplanationLevel | None = None,
         preferred_provider: str | None = None,
         prefer_existing_text: bool = False,
+        teaching_directives: list[str] | None = None,
     ) -> tuple[StructuredExplanation, ExplanationLevel]:
         """
         Generate and parse a level-adaptive explanation into the standard schema.
@@ -197,9 +204,25 @@ class AdaptiveExplainerService:
             solution,
             resolved_level,
             preferred_provider=preferred_provider,
+            teaching_directives=teaching_directives,
         )
         structured = explanation_generator.generate(adaptive_text, problem)
         return structured, resolved_level
+
+    @staticmethod
+    def _build_user_prompt(
+        *,
+        template: PromptTemplate,
+        problem: str,
+        solution: str,
+        teaching_directives: list[str] | None,
+    ) -> str:
+        prompt = template.user.format(problem=problem.strip(), solution=solution.strip())
+        directives = [directive.strip() for directive in (teaching_directives or []) if directive and directive.strip()]
+        if not directives:
+            return prompt
+        extra = "\n".join(f"- {directive}" for directive in directives)
+        return f"{prompt}\n- follow these additional teaching instructions:\n{extra}"
 
     def _extract_assumed_level(self, student_model: dict[str, Any]) -> float | None:
         direct_value = student_model.get("assumed_level")

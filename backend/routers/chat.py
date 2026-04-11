@@ -24,6 +24,7 @@ class SendMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
     stream: bool = False
     session_id: str | None = None
+    debug: bool = False
 
 
 class UpdateSessionRequest(BaseModel):
@@ -152,5 +153,6 @@ async def stream_chat(
             "strategy": result.trace.strategy,
             "tool_used": result.trace.tool_used,
             "validation_passed": result.trace.validation_passed,
+            **({"debug": {**result.debug_plan, "execution_echo": result.execution_echo}} if req.debug else {}),
         },
     )

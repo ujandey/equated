@@ -20,6 +20,7 @@ class SolveRequest(BaseModel):
     image_base64: str | None = None
     input_type: str = "text"           # "text" | "image" | "latex"
     stream: bool = False               # Enable SSE streaming
+    debug: bool = False
 
 
 class SolveResponse(BaseModel):
@@ -41,6 +42,7 @@ class SolveResponse(BaseModel):
     math_engine_result: str | None = None
     cached: bool = False
     credits_remaining: int | None = None
+    debug: dict | None = None
 
 
 # ── Credit Models ──────────────────────────────────

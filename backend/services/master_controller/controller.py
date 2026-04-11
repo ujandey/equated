@@ -20,6 +20,7 @@ from services.topic_blocks import TopicRoutingDecision, topic_block_service
 # Local Decoupled Modules
 from services.master_controller.query_normalizer import query_normalizer
 from services.master_controller.intent_classifier import intent_classifier_service
+from services.master_controller.query_splitter import QueryExecutionPlan, query_splitter
 from services.master_controller.validation_gates import validation_gates_service
 from services.master_controller.response_assembler import response_assembler_service, ControllerResponse, ControllerResult, DecisionTrace
 from services.master_controller.fallback_handler import controller_fallback_handler
@@ -41,6 +42,38 @@ class MasterController:
     ) -> ControllerResult:
         normalized_query = query_normalizer.normalize_input(query)
         validated_query = input_validator.validate_query(normalized_query)
+        split_decision = query_splitter.analyze(validated_query)
+        execution_query = split_decision.primary_clause.raw_clause if split_decision.primary_clause and not split_decision.should_clarify else validated_query
+        execution_plan = split_decision.query_execution_plan
+        qep_trace = execution_plan.to_trace(input_text=validated_query, clause_intents=split_decision.clause_intents)
+        safe_debug_plan = execution_plan.to_safe_debug()
+        execution_echo = execution_plan.build_execution_echo()
+
+        if split_decision.should_clarify:
+            clarification = split_decision.clarification_message or "Please ask one task at a time."
+            response = ControllerResponse(
+                final_answer="",
+                steps=[],
+                concept="",
+                simple_explanation=clarification,
+                coach_feedback="",
+                confidence=0.0,
+                raw_text=clarification,
+                clarification_request=clarification,
+                credits_remaining=credits_remaining,
+            )
+            trace = DecisionTrace(
+                intent="unclear",
+                strategy="query_splitter",
+                block_id=None,
+                tool_used="validation",
+                validation_passed=False,
+                mode="new_topic",
+                normalized_query=validated_query,
+                clarification=clarification,
+            )
+            self._log_trace(trace)
+            return ControllerResult(response=response, trace=trace, session_id=session_id, block_id=None, topic_mode="new_topic", qep_trace=qep_trace, debug_plan=safe_debug_plan, execution_echo=execution_echo)
 
         base_intent = intent_classifier_service.classify_intent(validated_query)
         session_id = await self._ensure_session(user_id=user_id, source=source, session_id=session_id)
@@ -82,21 +115,23 @@ class MasterController:
                 trace=trace,
             )
             self._log_trace(trace)
-            return ControllerResult(response=response, trace=trace, session_id=session_id, block_id=routing.block_id if routing else None, topic_mode=routing.decision_type if routing else "new_topic")
+            return ControllerResult(response=response, trace=trace, session_id=session_id, block_id=routing.block_id if routing else None, topic_mode=routing.decision_type if routing else "new_topic", qep_trace=qep_trace, debug_plan=safe_debug_plan, execution_echo=execution_echo)
 
-        pedagogical_decision = route_pedagogy(validated_query, student_state)
+        pedagogical_decision = self._apply_execution_modifiers(route_pedagogy(validated_query, student_state), execution_plan)
         coaching_decision = response_assembler_service.build_coaching(validated_query)
         classification = intent_classifier_service.contextualize_classification(classifier.classify(validated_query), routing)
 
         if intent == "solve":
             response, tool_used = await self._handle_solve(
-                query=validated_query,
+                query=execution_query,
+                presentation_query=validated_query,
                 user_id=user_id,
                 student_state=student_state,
                 pedagogical_decision=pedagogical_decision,
                 coaching_decision=coaching_decision,
                 classification=classification,
                 credits_remaining=credits_remaining,
+                execution_plan=execution_plan,
             )
         else:
             response, tool_used = await self._handle_explain(
@@ -138,6 +173,9 @@ class MasterController:
             topic_mode=routing.decision_type if routing else "new_topic",
             pedagogical_decision=pedagogical_decision,
             coaching_decision=coaching_decision,
+            qep_trace=qep_trace,
+            debug_plan=safe_debug_plan,
+            execution_echo=execution_echo,
         )
 
     async def _ensure_session(self, *, user_id: str, source: str, session_id: str | None) -> str | None:
@@ -164,12 +202,14 @@ class MasterController:
         self,
         *,
         query: str,
+        presentation_query: str,
         user_id: str,
         student_state: dict[str, Any] | None,
         pedagogical_decision: dict[str, Any],
         coaching_decision: dict[str, Any],
         classification,
         credits_remaining: int | None,
+        execution_plan: QueryExecutionPlan,
     ) -> tuple[ControllerResponse, str]:
         if not query.strip():
             raise ValueError("Validation must run before solve pipeline")
@@ -187,13 +227,14 @@ class MasterController:
                 pass
                 
             structured, _ = await adaptive_explainer.generate_structured_explanation(
-                problem=query,
+                problem=presentation_query,
                 solution=response_assembler_service.symbolic_payload(symbolic_solution),
                 student_model=student_state,
                 preferred_provider=preferred_provider,
+                teaching_directives=self._teaching_directives(execution_plan),
             )
             structured = response_assembler_service.hydrate_structured_explanation(
-                structured, structured.final_answer or response_assembler_service.symbolic_payload(symbolic_solution), query
+                structured, structured.final_answer or response_assembler_service.symbolic_payload(symbolic_solution), presentation_query
             )
             confidence = compute_confidence_report(
                 parse_confidence="high",
@@ -400,5 +441,55 @@ class MasterController:
             tool_used=trace.tool_used,
             validation_passed=trace.validation_passed,
         )
+
+    @staticmethod
+    def _apply_execution_modifiers(pedagogical_decision: dict[str, Any], execution_plan: QueryExecutionPlan) -> dict[str, Any]:
+        if not execution_plan or not execution_plan.steps:
+            return pedagogical_decision
+
+        updated = dict(pedagogical_decision or {})
+        reason = str(updated.get("reason") or "").strip()
+        confidence = float(updated.get("confidence") or 0.5)
+        solve_step = execution_plan.solve_step
+        explain_step = execution_plan.explain_step
+
+        if solve_step and solve_step.mode == "scaffolded":
+            updated["strategy"] = "scaffolded"
+            updated["reason"] = (reason + " User explicitly asked for detailed step-by-step execution.").strip()
+            updated["confidence"] = max(confidence, 0.92)
+        elif explain_step and explain_step.mode == "scaffolded" and explain_step.depends_on == 0:
+            updated["strategy"] = "scaffolded"
+            updated["reason"] = (reason + " User asked for a detailed walkthrough of the solve steps.").strip()
+            updated["confidence"] = max(confidence, 0.9)
+        elif solve_step and solve_step.mode == "minimal":
+            updated["strategy"] = "worked_example"
+            updated["reason"] = (reason + " User asked for a brief explanation style.").strip()
+            updated["confidence"] = max(confidence, 0.8)
+        elif solve_step and solve_step.mode == "guided":
+            updated["strategy"] = "worked_example" if updated.get("strategy") == "analogy" else updated.get("strategy", "worked_example")
+
+        return updated
+
+    @staticmethod
+    def _teaching_directives(execution_plan: QueryExecutionPlan) -> list[str]:
+        directives: list[str] = []
+        solve_step = execution_plan.solve_step
+        explain_step = execution_plan.explain_step
+        if solve_step and solve_step.mode == "scaffolded":
+            directives.append("Explain each algebraic step in detail and do not skip intermediate transformations.")
+            directives.append("Make the step sequence explicit, with clear reasoning for why each step is valid.")
+        elif solve_step and solve_step.mode == "minimal":
+            directives.append("Keep the solve explanation concise and avoid unnecessary elaboration.")
+        elif solve_step and solve_step.mode == "guided":
+            directives.append("Show the main steps clearly, but keep the explanation light and readable.")
+        if explain_step and explain_step.mode == "minimal":
+            directives.append("Keep any attached conceptual explanation brief and focused on the key reason only.")
+        elif explain_step and explain_step.mode == "scaffolded":
+            if explain_step.depends_on == 0:
+                directives.append("Explain each algebraic step in detail and connect it to the reasoning behind the result.")
+            directives.append("For the attached conceptual explanation, unpack the reasoning in detail.")
+        elif explain_step and explain_step.mode == "guided":
+            directives.append("For the attached conceptual explanation, give a short but clear reason for why the result makes sense.")
+        return directives
 
 master_controller = MasterController()

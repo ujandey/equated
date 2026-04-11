@@ -35,6 +35,7 @@
     "@supabase/supabase-js": "^2.39.0",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.11",
+    "framer-motion": "^12.38.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.9",
     "lucide-react": "^0.577.0",

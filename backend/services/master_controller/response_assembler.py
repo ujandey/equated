@@ -47,6 +47,9 @@ class ControllerResult:
     topic_mode: str = "new_topic"
     pedagogical_decision: dict[str, Any] = field(default_factory=dict)
     coaching_decision: dict[str, Any] = field(default_factory=dict)
+    qep_trace: dict[str, Any] = field(default_factory=dict)
+    debug_plan: dict[str, Any] = field(default_factory=dict)
+    execution_echo: dict[str, Any] = field(default_factory=dict)
 
 class ResponseAssembler:
     """Handles response formatting, construction, and confidence aggregation."""
