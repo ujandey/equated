@@ -7,6 +7,9 @@ Essential for container orchestration, load balancers, and uptime monitors.
 
 from fastapi import APIRouter
 from db.models import HealthResponse
+import structlog
+
+logger = structlog.get_logger("equated.routers.health")
 
 router = APIRouter()
 
@@ -55,7 +58,8 @@ async def health_db():
             "pool_free": pool_free,
         }
     except Exception as e:
-        return {"status": "down", "error": str(e)}
+        logger.error("db_health_error", error=str(e), exc_info=True)
+        return {"status": "down", "error": "An internal error occurred."}
 
 
 @router.get("/health/redis")
@@ -72,7 +76,8 @@ async def health_redis():
             "connected_clients": info.get("connected_clients", 0),
         }
     except Exception as e:
-        return {"status": "down", "error": str(e)}
+        logger.error("redis_health_error", error=str(e), exc_info=True)
+        return {"status": "down", "error": "An internal error occurred."}
 
 
 @router.get("/health/ai")
@@ -91,7 +96,8 @@ async def health_ai():
             )
         results["deepseek"] = "ok" if response.status_code == 200 else f"error_{response.status_code}"
     except Exception as e:
-        results["deepseek"] = f"down: {str(e)[:50]}"
+        logger.error("deepseek_health_error", error=str(e), exc_info=True)
+        results["deepseek"] = "down: An internal error occurred."
 
     # Check Groq
     try:
@@ -104,7 +110,8 @@ async def health_ai():
             )
         results["groq"] = "ok" if response.status_code == 200 else f"error_{response.status_code}"
     except Exception as e:
-        results["groq"] = f"down: {str(e)[:50]}"
+        logger.error("groq_health_error", error=str(e), exc_info=True)
+        results["groq"] = "down: An internal error occurred."
 
     overall = "ok" if all(v == "ok" for v in results.values()) else "degraded"
     return {"status": overall, "providers": results}
