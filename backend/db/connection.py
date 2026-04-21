@@ -12,12 +12,20 @@ via ``statement_cache_size=0`` to avoid massive slowdowns and intermittent
 """
 
 import asyncpg
+from urllib.parse import urlparse
 from config.settings import settings
 
 
 def _uses_pgbouncer(dsn: str) -> bool:
     """Detect whether the DSN routes through Supabase's PgBouncer pooler."""
-    return "pooler.supabase.com" in dsn or "pgbouncer" in dsn.lower()
+    try:
+        host = urlparse(dsn).hostname
+        if not host:
+            return False
+        host = host.lower()
+        return host == "pooler.supabase.com" or host.endswith(".pooler.supabase.com") or "pgbouncer" in host
+    except ValueError:
+        return False
 
 
 class DatabasePool:
