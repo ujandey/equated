@@ -12,6 +12,8 @@ import structlog
 
 from cache.redis_cache import redis_client
 from cache.vector_cache import vector_cache, CacheHit
+from cache.cache_metrics import cache_metrics
+from monitoring.metrics import CACHE_LOOKUPS
 from services.query_normalizer import query_normalizer
 
 logger = structlog.get_logger("equated.cache.query")
@@ -62,6 +64,8 @@ class QueryCache:
                 cached_solution = cached_wrapped
                 
             if cached_wrapped is not None:
+                cache_metrics.record_redis_hit()
+                CACHE_LOOKUPS.labels(tier="redis", result="hit").inc()
                 logger.info("redis_cache_hit", key=cache_key[:8])
                 return CacheHit(
                     found=True,
@@ -70,9 +74,15 @@ class QueryCache:
                     cache_key=cache_key,
                 )
 
+        # Redis miss
+        cache_metrics.record_redis_miss()
+        CACHE_LOOKUPS.labels(tier="redis", result="miss").inc()
+
         # Tier 2: pgvector semantic match (slower)
         vector_hit = await vector_cache.lookup(query)
         if vector_hit.found:
+            cache_metrics.record_vector_hit()
+            CACHE_LOOKUPS.labels(tier="vector", result="hit").inc()
             # Promote to Redis for faster future hits
             await redis_client.set_json(
                 f"solve:{cache_key}",
@@ -81,7 +91,9 @@ class QueryCache:
             )
             return vector_hit
 
-        # Cache miss
+        # Both tiers missed
+        cache_metrics.record_vector_miss()
+        CACHE_LOOKUPS.labels(tier="vector", result="miss").inc()
         return CacheHit(found=False, similarity=0.0, cached_solution=None, cache_key=cache_key)
 
     async def store(self, query: str, solution: dict, compute_seconds: float = 0.0):

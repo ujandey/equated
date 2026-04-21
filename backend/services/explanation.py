@@ -96,7 +96,7 @@ class ExplanationGenerator:
                 "rule": "",
                 "explanation": content,
             })
-        return steps if steps else [{"step": 1, "rule": "", "explanation": text[:500]}]
+        return steps if steps else [{"step": 1, "rule": "", "explanation": text.strip()}]
 
     def _extract_latex(self, text: str) -> list[str]:
         """Extract LaTeX expressions ($..$ and $$..$$)."""

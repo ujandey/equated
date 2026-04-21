@@ -39,9 +39,12 @@ async def lifespan(app: FastAPI):
     from cache.redis_cache import redis_client
     from db.connection import init_db
 
+    from monitoring.posthog_client import init_posthog
+
     configure_json_logging()
     init_tracing()
     init_metrics()
+    init_posthog()
 
     # Connect to Redis (non-fatal if unavailable)
     try:
@@ -54,6 +57,16 @@ async def lifespan(app: FastAPI):
     try:
         await init_db()
         logger.info("Database connected")
+        from config.settings import settings as _settings
+        if _settings.APP_ENV == "development":
+            from gateway.auth_middleware import _DEV_USER_ID
+            from db.connection import get_db
+            try:
+                _db = await get_db()
+                if _db:
+                    await _db.execute("INSERT INTO users (id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING", _DEV_USER_ID, "dev-test-user@equated.app")
+            except Exception as e:
+                logger.warning(f"Could not bootstrap dev user: {e}")
     except Exception as e:
         logger.warning(f"Database connection failed (some features unavailable): {e}")
 
@@ -97,12 +110,14 @@ register_exception_handlers(app)
 # Note: Middlewares execute in reverse order of addition.
 # 1. RequestLogger (outermost)
 # 2. RateLimit
-# 3. AbuseThrottle (delays users dynamically instead of ghost banning)
-# 4. LoadShedding (drops heavy ops based on capacity BEFORE auth)
+# 3. AbuseThrottle (if not dev)
+# 4. LoadShedding (if not dev)
 # 5. Auth (verifies tokens)
+
 app.add_middleware(AuthMiddleware)
-app.add_middleware(LoadSheddingMiddleware)
-app.add_middleware(AbuseThrottleMiddleware)
+if settings.APP_ENV != "development":
+    app.add_middleware(LoadSheddingMiddleware)
+    app.add_middleware(AbuseThrottleMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
 app.add_middleware(

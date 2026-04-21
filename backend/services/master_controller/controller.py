@@ -5,7 +5,7 @@ from typing import Any
 
 from ai.classifier import classifier
 from ai.pedagogical_router import build_strategy_system_prompt, route as route_pedagogy
-from ai.prompts import CHAT_EXPLAIN_SYSTEM_PROMPT, SOLVER_SYSTEM_PROMPT
+from ai.prompts import build_chat_system_prompt, SOLVER_SYSTEM_PROMPT
 from ai.router import model_router
 
 from services.adaptive_explainer import adaptive_explainer
@@ -105,14 +105,18 @@ class MasterController:
                 subject=routing.subject if routing else None,
                 clarification=clarification,
             )
-            await self._update_state(
-                source=source,
-                user_id=user_id,
-                session_id=session_id,
-                routing=routing,
-                query=validated_query,
-                response=response,
-                trace=trace,
+            import asyncio
+            # Schedule heavy database writes in background to prevent proxy socket timeout
+            asyncio.create_task(
+                self._update_state(
+                    source=source,
+                    user_id=user_id,
+                    session_id=session_id,
+                    routing=routing,
+                    query=validated_query,
+                    response=response,
+                    trace=trace,
+                )
             )
             self._log_trace(trace)
             return ControllerResult(response=response, trace=trace, session_id=session_id, block_id=routing.block_id if routing else None, topic_mode=routing.decision_type if routing else "new_topic", qep_trace=qep_trace, debug_plan=safe_debug_plan, execution_echo=execution_echo)
@@ -132,6 +136,7 @@ class MasterController:
                 classification=classification,
                 credits_remaining=credits_remaining,
                 execution_plan=execution_plan,
+                session_id=session_id,
             )
         else:
             response, tool_used = await self._handle_explain(
@@ -143,6 +148,7 @@ class MasterController:
                 classification=classification,
                 credits_remaining=credits_remaining,
                 routing=routing,
+                session_id=session_id,
             )
 
         trace = DecisionTrace(
@@ -155,14 +161,17 @@ class MasterController:
             normalized_query=validated_query,
             subject=routing.subject if routing else classification.subject.value,
         )
-        await self._update_state(
-            source=source,
-            user_id=user_id,
-            session_id=session_id,
-            routing=routing,
-            query=validated_query,
-            response=response,
-            trace=trace,
+        import asyncio
+        asyncio.create_task(
+            self._update_state(
+                source=source,
+                user_id=user_id,
+                session_id=session_id,
+                routing=routing,
+                query=validated_query,
+                response=response,
+                trace=trace,
+            )
         )
         self._log_trace(trace)
         return ControllerResult(
@@ -210,6 +219,7 @@ class MasterController:
         classification,
         credits_remaining: int | None,
         execution_plan: QueryExecutionPlan,
+        session_id: str | None,
     ) -> tuple[ControllerResponse, str]:
         if not query.strip():
             raise ValueError("Validation must run before solve pipeline")
@@ -219,19 +229,54 @@ class MasterController:
         extracted = symbolic_solver.extract_expression(query)
         symbolic_solution = symbolic_solver.solve_expression(extracted)
         if symbolic_solution.success and symbolic_solution.math_result:
-            
-            preferred_provider = None
+
+            # ── Algorithmic tutoring layer ──────────────────────────────
+            llm_prompt_override: str | None = None
+            socratic_probe = None
+            try:
+                from services.concept_graph import get_concept_graph
+                from services.diagnosis_engine import diagnosis_engine
+                from services.explanation_path_builder import explanation_path_builder
+                from services.socratic_loop import socratic_loop as _socratic_loop
+
+                _cg = get_concept_graph()
+                _topic = (symbolic_solution.request.operation or "algebra").lower()
+
+                _student_profile = await diagnosis_engine.diagnose(
+                    user_id=user_id,
+                    topic=_topic,
+                    concept_graph=_cg,
+                )
+                _script = explanation_path_builder.build(
+                    problem=presentation_query,
+                    sympy_result=symbolic_solution,
+                    student_profile=_student_profile,
+                    concept_graph=_cg,
+                )
+                llm_prompt_override = _script.llm_prompt
+                socratic_probe = _socratic_loop.generate_probe(
+                    presentation_query, symbolic_solution
+                )
+            except Exception as _tutor_exc:
+                logger.warning(
+                    "tutoring_layer_failed",
+                    error=str(_tutor_exc),
+                    user_id=user_id[:8],
+                )
+            # ── End algorithmic tutoring layer ──────────────────────────
+
             try:
                 preferred_provider = model_router.route(classification).provider.value
             except Exception:
                 pass
-                
+
             structured, _ = await adaptive_explainer.generate_structured_explanation(
                 problem=presentation_query,
                 solution=response_assembler_service.symbolic_payload(symbolic_solution),
                 student_model=student_state,
                 preferred_provider=preferred_provider,
                 teaching_directives=self._teaching_directives(execution_plan),
+                prompt_override=llm_prompt_override,
             )
             structured = response_assembler_service.hydrate_structured_explanation(
                 structured, structured.final_answer or response_assembler_service.symbolic_payload(symbolic_solution), presentation_query
@@ -243,17 +288,40 @@ class MasterController:
                 parser_source="symbolic_solver",
                 math_check_passed=symbolic_solution.verified,
             )
-            return (
-                response_assembler_service.assemble_response(
-                    structured=structured,
-                    confidence=confidence,
-                    coach_feedback=response_assembler_service.coach_feedback(coaching_decision),
-                    model_used="adaptive_explainer",
-                    math_engine_result=symbolic_solution.math_result.result,
-                    credits_remaining=credits_remaining,
-                ),
-                "sympy",
+
+            # Store in session state for multi-turn chat context
+            if session_id:
+                from cache.redis_cache import redis_client
+                try:
+                    await redis_client.client.setex(f"session:{session_id}:last_problem", 3600, presentation_query)
+                    if structured.quick_summary:
+                        await redis_client.client.setex(f"session:{session_id}:last_summary", 3600, structured.quick_summary)
+                except Exception as e:
+                    logger.warning("failed_to_save_session_context", error=str(e), session_id=session_id)
+
+            raw_result = symbolic_solution.math_result.result
+            math_engine_str = str(raw_result) if raw_result is not None else None
+            _assembled = response_assembler_service.assemble_response(
+                structured=structured,
+                confidence=confidence,
+                coach_feedback=response_assembler_service.coach_feedback(coaching_decision),
+                model_used="adaptive_explainer",
+                math_engine_result=math_engine_str,
+                credits_remaining=credits_remaining,
             )
+
+            # Append Socratic probe question to the response when available.
+            if socratic_probe is not None:
+                _probe_text = (
+                    f"\n\n---\n**Practice check:** {socratic_probe.question_text}"
+                )
+                _assembled.raw_text = (_assembled.raw_text or "") + _probe_text
+                _assembled.coach_feedback = (
+                    (_assembled.coach_feedback or "")
+                    + f"\n\n{socratic_probe.question_text}"
+                ).strip()
+
+            return _assembled, "sympy"
             
         logger.warning(
             "solve_validation_failed_before_symbolic",
@@ -301,10 +369,24 @@ class MasterController:
         classification,
         credits_remaining: int | None,
         routing: TopicRoutingDecision | None,
+        session_id: str | None,
     ) -> tuple[ControllerResponse, str]:
         decision = model_router.route(classification)
+        
+        last_problem = None
+        last_summary = None
+        if session_id:
+            from cache.redis_cache import redis_client
+            try:
+                raw_prob = await redis_client.client.get(f"session:{session_id}:last_problem")
+                raw_sum = await redis_client.client.get(f"session:{session_id}:last_summary")
+                if raw_prob: last_problem = raw_prob.decode("utf-8") if isinstance(raw_prob, bytes) else raw_prob
+                if raw_sum: last_summary = raw_sum.decode("utf-8") if isinstance(raw_sum, bytes) else raw_sum
+            except Exception as e:
+                logger.warning("failed_to_load_session_context", error=str(e), session_id=session_id)
+
         messages = [
-            {"role": "system", "content": CHAT_EXPLAIN_SYSTEM_PROMPT},
+            {"role": "system", "content": build_chat_system_prompt(last_problem, last_summary)},
             {"role": "system", "content": build_strategy_system_prompt(pedagogical_decision)},
         ]
         if coaching_decision:

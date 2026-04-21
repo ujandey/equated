@@ -82,16 +82,16 @@ class Settings(BaseSettings):
     MAX_IMAGE_SIZE_MB: int = 10             # Max image upload size
 
     # ── AST Hard Limits (deterministic, no jitter) ──
-    MAX_EXPONENT_NESTING: int = 5           # Max chained ** depth
-    MAX_OPERATOR_COUNT: int = 50            # Total arithmetic + function operators
-    MAX_EXPRESSION_DEPTH: int = 15          # Parenthetical nesting depth
-    MAX_INTERMEDIATE_NODES: int = 10000     # SymPy intermediate node upper bound
-    MAX_SINGLE_EXPANSION: int = 300         # Per-node Pow expansion factor
-    MAX_TOTAL_EXPANSION: int = 600          # Cumulative expansion across all Pow nodes
+    MAX_EXPONENT_NESTING: int = 8           # Max chained ** depth (relaxed for student UX)
+    MAX_OPERATOR_COUNT: int = 150           # Total arithmetic + function operators (relaxed)
+    MAX_EXPRESSION_DEPTH: int = 30          # Parenthetical nesting depth (relaxed)
+    MAX_INTERMEDIATE_NODES: int = 50000     # SymPy intermediate node upper bound (relaxed)
+    MAX_SINGLE_EXPANSION: int = 1000        # Per-node Pow expansion factor (relaxed)
+    MAX_TOTAL_EXPANSION: int = 2000         # Cumulative expansion across all Pow nodes (relaxed)
 
     # ── AST Margin Limits (jitter zone only) ──
-    MARGIN_OPERATOR_COUNT: int = 40         # Jitter zone: 40–50
-    MARGIN_EXPRESSION_DEPTH: int = 12       # Jitter zone: 12–15
+    MARGIN_OPERATOR_COUNT: int = 120        # Jitter zone: 120–150 (relaxed)
+    MARGIN_EXPRESSION_DEPTH: int = 25       # Jitter zone: 25–30 (relaxed)
 
     # ── SymPy Subprocess Sandbox ────────────────
     SYMPY_SUBPROCESS_TIMEOUT_S: int = 10    # Hard kill timeout

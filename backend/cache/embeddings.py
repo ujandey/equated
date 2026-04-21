@@ -39,12 +39,13 @@ class EmbeddingGenerator:
             self._client = httpx.AsyncClient(
                 base_url=settings.OPENAI_BASE_URL.rstrip("/"),
                 headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
-                timeout=15.0,
+                timeout=1.5,
             )
         return self._client
 
     async def generate(self, text: str) -> list[float] | None:
         """Generate an embedding vector for the given text."""
+        import asyncio
         if not settings.OPENAI_API_KEY:
             logger.warning("embedding_skipped", reason="OPENAI_API_KEY not set")
             return None
@@ -55,17 +56,24 @@ class EmbeddingGenerator:
 
         try:
             client = await self._get_client()
-            response = await client.post(
-                "/embeddings",
-                json={
-                    "model": self.MODEL,
-                    "input": text[:8000],  # Truncate to safe input length
-                },
+            response = await asyncio.wait_for(
+                client.post(
+                    "/embeddings",
+                    json={
+                        "model": self.MODEL,
+                        "input": text[:8000],  # Truncate to safe input length
+                    },
+                ),
+                timeout=2.0
             )
             response.raise_for_status()
             data = response.json()
             return data["data"][0]["embedding"]
 
+        except (asyncio.TimeoutError, httpx.TimeoutException):
+            self._disabled_until_monotonic = time.monotonic() + 600
+            logger.warning("embedding_rate_limited", cooldown_seconds=600, model=self.MODEL, reason="timeout")
+            return None
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 self._disabled_until_monotonic = time.monotonic() + 600
@@ -79,17 +87,21 @@ class EmbeddingGenerator:
 
     async def generate_batch(self, texts: list[str]) -> list[list[float] | None]:
         """Generate embeddings for multiple texts in a single API call."""
+        import asyncio
         if not settings.OPENAI_API_KEY:
             return [None] * len(texts)
 
         try:
             client = await self._get_client()
-            response = await client.post(
-                "/embeddings",
-                json={
-                    "model": self.MODEL,
-                    "input": [t[:8000] for t in texts],
-                },
+            response = await asyncio.wait_for(
+                client.post(
+                    "/embeddings",
+                    json={
+                        "model": self.MODEL,
+                        "input": [t[:8000] for t in texts],
+                    },
+                ),
+                timeout=2.0
             )
             response.raise_for_status()
             data = response.json()

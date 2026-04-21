@@ -2,18 +2,18 @@
 
 import { useState, useRef, useEffect } from "react";
 import { MessageBubble } from "./MessageBubble";
-import { SolutionCard } from "./SolutionCard";
 import { useChat } from "@/hooks/useChat";
 import { Header } from "@/components/layout/Header";
 import type { Message } from "@/types/message";
 import { 
-  Sparkles, Send, Mic, Lightbulb, CheckCircle2, 
+  Sparkles, Send, Paperclip, Lightbulb, CheckCircle2, 
   BookOpen, Book, AlertTriangle, LineChart 
 } from "lucide-react";
 
 export function ChatWindow() {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isLoading, sendMessage } = useChat();
 
   useEffect(() => {
@@ -28,8 +28,13 @@ export function ChatWindow() {
     await sendMessage(query);
   };
 
+  const handleRetry = async (content: string) => {
+    await sendMessage(content);
+  };
+
   const setPrompt = (prompt: string) => {
     setInput(prompt);
+    inputRef.current?.focus();
   };
 
   return (
@@ -52,19 +57,7 @@ export function ChatWindow() {
           <div className="space-y-12">
             {messages.map((msg: Message) => (
               <div key={msg.id} className="animate-slide-up w-full">
-                {msg.role === "assistant" && msg.metadata?.structured ? (
-                  <div className="max-w-3xl mx-auto glass-panel border-t-[3px] border-primary rounded-b-xl shadow-2xl relative overflow-hidden">
-                    <div className="p-6 md:p-10">
-                      <SolutionCard solution={msg.metadata.structured} />
-                    </div>
-                    {/* Abstract Decorative Pattern */}
-                    <div className="absolute top-0 right-0 w-32 h-32 opacity-10 pointer-events-none">
-                      <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary to-transparent"></div>
-                    </div>
-                  </div>
-                ) : (
-                  <MessageBubble message={msg} />
-                )}
+                <MessageBubble message={msg} onRetry={handleRetry} />
               </div>
             ))}
             <div ref={messagesEndRef} />
@@ -73,7 +66,7 @@ export function ChatWindow() {
           {isLoading && (
             <div className="flex justify-center animate-pulse pt-4">
               <div className="px-4 py-2 bg-surface-glass border border-border-glass rounded-full flex items-center gap-2 text-[0.75rem] text-on-surface/40 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary/60"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-ping"></span>
                 COMPUTING_RESPONSE...
               </div>
             </div>
@@ -150,15 +143,16 @@ export function ChatWindow() {
             className="relative glass-panel rounded-xl shadow-2xl overflow-hidden focus-within:ring-2 ring-primary/50 transition-all flex items-center"
           >
             <input 
+              ref={inputRef}
               className="w-full bg-transparent border-none text-on-surface placeholder:text-slate-500 focus:ring-0 py-5 pl-6 pr-24 outline-none font-body text-base md:text-lg h-full" 
-              placeholder="Describe your next problem or ask for clarification..." 
+              placeholder="Type an equation, ask a question, or describe a problem..." 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isLoading}
             />
             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
-              <button type="button" className="text-slate-500 hover:text-primary transition-colors hidden sm:block">
-                <Mic className="w-5 h-5" />
+              <button type="button" className="text-slate-500 hover:text-primary transition-colors hidden sm:block" title="Upload image">
+                <Paperclip className="w-5 h-5" />
               </button>
               <button 
                 type="submit"
@@ -173,8 +167,10 @@ export function ChatWindow() {
           {/* Prompt Suggestions */}
           {messages.length === 0 && (
             <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-2 justify-center opacity-70 hover:opacity-100 transition-opacity">
+              <button onClick={() => setPrompt("Solve x^2 - 5x + 6 = 0")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">Solve x² − 5x + 6 = 0</button>
+              <button onClick={() => setPrompt("Differentiate sin(x) * e^x")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">Differentiate sin(x) · eˣ</button>
+              <button onClick={() => setPrompt("Integrate 1/(1+x^2) dx")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">∫ 1/(1+x²) dx</button>
               <button onClick={() => setPrompt("Explain Stokes Theorem")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">Explain Stokes Theorem</button>
-              <button onClick={() => setPrompt("Evaluate the triple integral of x^2 + y^2")} className="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-glass border border-border-glass text-[0.75rem] text-slate-400 hover:text-primary hover:border-primary/20 transition-all">Evaluate a triple integral</button>
             </div>
           )}
         </div>

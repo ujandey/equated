@@ -40,6 +40,7 @@ celery[redis]>=5.3.0
 sentry-sdk[fastapi]>=2.8.0
 prometheus-client>=0.20.0
 structlog>=24.1.0
+posthog>=3.3.0               # product analytics event tracking
 
 # ── Testing ──────────────────────
 pytest>=8.0.0

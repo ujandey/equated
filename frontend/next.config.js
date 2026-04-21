@@ -1,3 +1,5 @@
+const { withSentryConfig } = require("@sentry/nextjs");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Enable React strict mode for development
@@ -31,4 +33,11 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withSentryConfig(nextConfig, {
+  // Suppress Sentry CLI output during build
+  silent: true,
+  // Upload source maps only in CI/production
+  disableSourceMapUpload: process.env.NODE_ENV !== "production",
+  // Automatically instrument Next.js data fetching methods
+  autoInstrumentServerFunctions: true,
+});

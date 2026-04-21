@@ -39,7 +39,7 @@ def _controller_result(*, final_answer: str = "x = 2", confidence: float = 0.95,
 
 @pytest.mark.asyncio
 async def test_solve_happy_path_uses_master_controller():
-    with patch("routers.solver.user_rate_limiter.check_and_deduct", new_callable=AsyncMock) as mock_limit, patch(
+    with patch("routers.solver.user_rate_limiter.check_limit", new_callable=AsyncMock) as mock_limit, patch(
         "routers.solver.master_controller.handle_query",
         new_callable=AsyncMock,
     ) as mock_handle:
@@ -59,7 +59,7 @@ async def test_solve_happy_path_uses_master_controller():
 
 @pytest.mark.asyncio
 async def test_solve_rate_limit_failure_short_circuits_controller():
-    with patch("routers.solver.user_rate_limiter.check_and_deduct", new_callable=AsyncMock) as mock_limit, patch(
+    with patch("routers.solver.user_rate_limiter.check_limit", new_callable=AsyncMock) as mock_limit, patch(
         "routers.solver.master_controller.handle_query",
         new_callable=AsyncMock,
     ) as mock_handle:
@@ -75,7 +75,7 @@ async def test_solve_rate_limit_failure_short_circuits_controller():
 
 @pytest.mark.asyncio
 async def test_solve_controller_outage_returns_503():
-    with patch("routers.solver.user_rate_limiter.check_and_deduct", new_callable=AsyncMock) as mock_limit, patch(
+    with patch("routers.solver.user_rate_limiter.check_limit", new_callable=AsyncMock) as mock_limit, patch(
         "routers.solver.master_controller.handle_query",
         new_callable=AsyncMock,
     ) as mock_handle:
@@ -91,7 +91,7 @@ async def test_solve_controller_outage_returns_503():
 
 @pytest.mark.asyncio
 async def test_solve_validation_gate_response_shape():
-    with patch("routers.solver.user_rate_limiter.check_and_deduct", new_callable=AsyncMock) as mock_limit, patch(
+    with patch("routers.solver.user_rate_limiter.check_limit", new_callable=AsyncMock) as mock_limit, patch(
         "routers.solver.master_controller.handle_query",
         new_callable=AsyncMock,
     ) as mock_handle:

@@ -1,0 +1,852 @@
+[
+  {
+    "id": "arithmetic",
+    "label": "Arithmetic & Number Operations",
+    "subject": "algebra",
+    "requires": [],
+    "connects_to": ["variables_expressions", "exponents", "angles_radians", "atomic_structure", "mole_concept"],
+    "common_errors": [
+      "Integer division confusion (5/2 = 2 instead of 2.5)",
+      "Order of operations neglect (BODMAS/PEMDAS errors)",
+      "Sign errors when subtracting negative numbers"
+    ],
+    "confusion_points": [
+      "Difference between integer and real division",
+      "When to apply BODMAS vs left-to-right evaluation"
+    ],
+    "curriculum": ["CBSE_6", "JEE_Foundation"]
+  },
+  {
+    "id": "variables_expressions",
+    "label": "Variables and Algebraic Expressions",
+    "subject": "algebra",
+    "requires": ["arithmetic"],
+    "connects_to": ["linear_equations", "polynomials", "functions"],
+    "common_errors": [
+      "Treating variables as fixed numbers",
+      "Not distributing multiplication over addition: a(b+c) = ab+c",
+      "Combining unlike terms: x + x² treated as 2x²"
+    ],
+    "confusion_points": [
+      "A variable represents any number, not a specific unknown",
+      "Like terms require the same variable AND same exponent"
+    ],
+    "curriculum": ["CBSE_7", "JEE_Foundation"]
+  },
+  {
+    "id": "linear_equations",
+    "label": "Linear Equations in One Variable",
+    "subject": "algebra",
+    "requires": ["variables_expressions"],
+    "connects_to": ["systems_of_equations", "inequalities", "kinematics"],
+    "common_errors": [
+      "Not performing the same operation on both sides",
+      "Sign flip error when moving terms across the equals sign",
+      "Forgetting to distribute when expanding brackets"
+    ],
+    "confusion_points": [
+      "The goal is to isolate the variable, not simplify the expression",
+      "Moving a term across '=' changes its sign"
+    ],
+    "curriculum": ["CBSE_7", "CBSE_8", "JEE_Foundation"]
+  },
+  {
+    "id": "systems_of_equations",
+    "label": "Systems of Linear Equations",
+    "subject": "algebra",
+    "requires": ["linear_equations"],
+    "connects_to": ["matrices", "optimization"],
+    "common_errors": [
+      "Adding equations incorrectly during elimination",
+      "Substituting back into the wrong original equation",
+      "Losing the second equation during substitution"
+    ],
+    "confusion_points": [
+      "When to use substitution vs elimination",
+      "A solution is a point (x, y) that satisfies BOTH equations simultaneously"
+    ],
+    "curriculum": ["CBSE_9", "JEE_Mains"]
+  },
+  {
+    "id": "inequalities",
+    "label": "Algebraic Inequalities",
+    "subject": "algebra",
+    "requires": ["linear_equations"],
+    "connects_to": ["optimization", "systems_of_equations"],
+    "common_errors": [
+      "Not flipping the inequality sign when multiplying/dividing by a negative",
+      "Treating inequality solutions as single points instead of intervals",
+      "Forgetting to check endpoint inclusion for closed vs open intervals"
+    ],
+    "confusion_points": [
+      "Multiplying both sides by a negative flips the inequality direction",
+      "The solution set is a range, visualized on a number line"
+    ],
+    "curriculum": ["CBSE_9", "JEE_Mains"]
+  },
+  {
+    "id": "exponents",
+    "label": "Exponents and Powers",
+    "subject": "algebra",
+    "requires": ["arithmetic"],
+    "connects_to": ["polynomials", "logarithms", "exponential_functions"],
+    "common_errors": [
+      "a^m × a^n = a^(m×n) instead of a^(m+n)",
+      "(a+b)^2 = a^2 + b^2 (missing 2ab term)",
+      "Negative exponent means reciprocal, not negative result"
+    ],
+    "confusion_points": [
+      "Exponent rules only apply when the base is the same",
+      "a^0 = 1 for all non-zero a"
+    ],
+    "curriculum": ["CBSE_8", "JEE_Foundation"]
+  },
+  {
+    "id": "polynomials",
+    "label": "Polynomials",
+    "subject": "algebra",
+    "requires": ["variables_expressions", "exponents"],
+    "connects_to": ["factoring", "quadratics", "rational_expressions"],
+    "common_errors": [
+      "Adding polynomials without aligning like terms",
+      "Multiplying polynomials by only multiplying first terms",
+      "Forgetting to include the negative sign when subtracting polynomials"
+    ],
+    "confusion_points": [
+      "Degree of a polynomial is the highest power of the variable",
+      "Every term in one polynomial must multiply every term in the other"
+    ],
+    "curriculum": ["CBSE_9", "JEE_Mains"]
+  },
+  {
+    "id": "factoring",
+    "label": "Factoring Polynomials",
+    "subject": "algebra",
+    "requires": ["polynomials"],
+    "connects_to": ["quadratics", "rational_expressions"],
+    "common_errors": [
+      "Forgetting to factor out the GCF first",
+      "Sign errors in factor pairs: finding wrong pairs that sum to middle term",
+      "Not checking factored form by expanding back"
+    ],
+    "confusion_points": [
+      "Factoring is the reverse of expanding",
+      "Always check for a common factor before using other techniques"
+    ],
+    "curriculum": ["CBSE_9", "JEE_Mains"]
+  },
+  {
+    "id": "quadratics",
+    "label": "Quadratic Equations",
+    "subject": "algebra",
+    "requires": ["factoring", "polynomials"],
+    "connects_to": ["functions", "kinematics", "optimization"],
+    "common_errors": [
+      "Forgetting to set each factor equal to zero",
+      "Quadratic formula sign errors under the radical",
+      "Not checking for extraneous solutions when squaring"
+    ],
+    "confusion_points": [
+      "A quadratic can have 0, 1, or 2 real solutions",
+      "Discriminant b²-4ac determines the number of real roots"
+    ],
+    "curriculum": ["CBSE_10", "JEE_Mains"]
+  },
+  {
+    "id": "logarithms",
+    "label": "Logarithms",
+    "subject": "algebra",
+    "requires": ["exponents"],
+    "connects_to": ["functions", "derivatives"],
+    "common_errors": [
+      "log(a+b) treated as log(a) + log(b)",
+      "log(ab) = log(a) + log(b) confused with log(a^b) = b·log(a)",
+      "Forgetting the domain restriction: log is undefined for non-positive arguments"
+    ],
+    "confusion_points": [
+      "log_b(x) = y means b^y = x — logarithm is the inverse of exponentiation",
+      "Change of base formula: log_b(x) = ln(x)/ln(b)"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "functions",
+    "label": "Functions and Function Notation",
+    "subject": "algebra",
+    "requires": ["variables_expressions"],
+    "connects_to": ["limits", "derivatives", "inverse_trig_functions"],
+    "common_errors": [
+      "f(x+h) expanded incorrectly as f(x) + f(h)",
+      "Confusing the domain (inputs) and range (outputs)",
+      "Treating f(x) as f multiplied by x"
+    ],
+    "confusion_points": [
+      "f(x) is a rule, not a product",
+      "A function assigns exactly one output to each input"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "rational_expressions",
+    "label": "Rational Expressions",
+    "subject": "algebra",
+    "requires": ["polynomials", "factoring"],
+    "connects_to": ["limits", "partial_fractions"],
+    "common_errors": [
+      "Cancelling terms instead of factors: (x²+1)/(x+1) ≠ x",
+      "Forgetting to exclude values that make the denominator zero",
+      "Adding fractions without finding common denominator first"
+    ],
+    "confusion_points": [
+      "Only common factors (not terms) can be cancelled",
+      "Always state the domain restrictions"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "angles_radians",
+    "label": "Angles and Radian Measure",
+    "subject": "trigonometry",
+    "requires": ["arithmetic"],
+    "connects_to": ["basic_trig_ratios", "unit_circle"],
+    "common_errors": [
+      "Mixing degrees and radians in the same calculation",
+      "Forgetting that 2π radians = 360 degrees",
+      "Using degree-mode calculator for radian problems"
+    ],
+    "confusion_points": [
+      "Radians are dimensionless ratios, not 'units' in the usual sense",
+      "π radians = 180 degrees is the core conversion fact"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "pythagorean_theorem",
+    "label": "Pythagorean Theorem",
+    "subject": "trigonometry",
+    "requires": ["arithmetic"],
+    "connects_to": ["basic_trig_ratios", "law_of_cosines", "vectors"],
+    "common_errors": [
+      "Applying to non-right triangles",
+      "Confusing hypotenuse with a leg: a² + c² = b² when b is hypotenuse",
+      "Arithmetic error when taking the square root"
+    ],
+    "confusion_points": [
+      "The theorem applies ONLY to right triangles",
+      "The hypotenuse is always the side opposite the right angle"
+    ],
+    "curriculum": ["CBSE_9", "JEE_Foundation"]
+  },
+  {
+    "id": "basic_trig_ratios",
+    "label": "Basic Trigonometric Ratios (SOH-CAH-TOA)",
+    "subject": "trigonometry",
+    "requires": ["pythagorean_theorem", "angles_radians"],
+    "connects_to": ["unit_circle", "trig_identities", "law_of_sines", "vectors"],
+    "common_errors": [
+      "Confusing sin and cos definitions (opposite vs adjacent)",
+      "Using the wrong side as hypotenuse",
+      "Forgetting that trig ratios depend on which angle is the reference"
+    ],
+    "confusion_points": [
+      "SOH: sin = Opposite/Hypotenuse, CAH: cos = Adjacent/Hypotenuse, TOA: tan = Opposite/Adjacent",
+      "Always specify which angle you are referencing"
+    ],
+    "curriculum": ["CBSE_10", "JEE_Mains"]
+  },
+  {
+    "id": "unit_circle",
+    "label": "Unit Circle",
+    "subject": "trigonometry",
+    "requires": ["basic_trig_ratios", "angles_radians"],
+    "connects_to": ["trig_identities", "inverse_trig_functions"],
+    "common_errors": [
+      "Misremembering quadrant signs for sin/cos/tan",
+      "Confusing reference angle with the actual angle",
+      "Mixing up coordinates: cos is x-coordinate, sin is y-coordinate"
+    ],
+    "confusion_points": [
+      "On the unit circle, (x,y) = (cos θ, sin θ)",
+      "ASTC mnemonic: All Sine Tangent Cosine — which are positive per quadrant"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "trig_identities",
+    "label": "Trigonometric Identities",
+    "subject": "trigonometry",
+    "requires": ["unit_circle", "basic_trig_ratios"],
+    "connects_to": ["inverse_trig_functions", "integrals"],
+    "common_errors": [
+      "Using sin²x + cos²x = 1 with wrong squaring: sin(x)² ≠ sin(x²)",
+      "Applying sum formula with wrong sign: cos(A+B) ≠ cosA·cosB + sinA·sinB",
+      "Confusing double angle and half angle formulas"
+    ],
+    "confusion_points": [
+      "Pythagorean identity: sin²θ + cos²θ = 1 is foundational",
+      "Sum formulas must be memorized carefully — each has specific signs"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains", "JEE_Advanced"]
+  },
+  {
+    "id": "inverse_trig_functions",
+    "label": "Inverse Trigonometric Functions",
+    "subject": "trigonometry",
+    "requires": ["unit_circle", "functions"],
+    "connects_to": ["derivatives", "integrals"],
+    "common_errors": [
+      "Confusing sin⁻¹(x) with 1/sin(x)",
+      "Ignoring restricted domains: arcsin range is [-π/2, π/2]",
+      "Not accounting for multiple solutions outside principal range"
+    ],
+    "confusion_points": [
+      "arcsin is NOT the reciprocal of sin; it is the inverse function",
+      "Inverse trig functions have restricted ranges to make them proper functions"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "law_of_sines",
+    "label": "Law of Sines",
+    "subject": "trigonometry",
+    "requires": ["basic_trig_ratios"],
+    "connects_to": ["law_of_cosines"],
+    "common_errors": [
+      "Forgetting the ambiguous case (SSA can give 0, 1, or 2 triangles)",
+      "Using degrees when calculator is in radian mode",
+      "Applying to right triangles when simpler methods suffice"
+    ],
+    "confusion_points": [
+      "a/sin(A) = b/sin(B) = c/sin(C) — each side paired with its opposite angle",
+      "The ambiguous case arises when the given angle is acute"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "law_of_cosines",
+    "label": "Law of Cosines",
+    "subject": "trigonometry",
+    "requires": ["basic_trig_ratios", "pythagorean_theorem"],
+    "connects_to": ["vectors"],
+    "common_errors": [
+      "Forgetting the -2bc·cos(A) term",
+      "Using wrong angle: angle A is opposite side a",
+      "Not simplifying to Pythagorean theorem when angle is 90°"
+    ],
+    "confusion_points": [
+      "c² = a² + b² - 2ab·cos(C) generalises the Pythagorean theorem",
+      "When C = 90°, cos(90°) = 0 and the formula reduces to a² + b² = c²"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "limits",
+    "label": "Limits",
+    "subject": "calculus",
+    "requires": ["functions"],
+    "connects_to": ["continuity", "derivatives"],
+    "common_errors": [
+      "Plugging in the limit point directly without checking if the form is 0/0",
+      "Confusing the limit with the function value at the point",
+      "Forgetting one-sided limits for piecewise functions"
+    ],
+    "confusion_points": [
+      "lim_{x→a} f(x) asks about behavior NEAR a, not AT a",
+      "0/0 is an indeterminate form that requires further analysis"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "continuity",
+    "label": "Continuity",
+    "subject": "calculus",
+    "requires": ["limits"],
+    "connects_to": ["derivatives"],
+    "common_errors": [
+      "Confusing continuity with differentiability",
+      "Forgetting to check all three conditions: limit exists, f(a) exists, they're equal",
+      "Assuming continuous functions are differentiable everywhere"
+    ],
+    "confusion_points": [
+      "A function is continuous at a if lim_{x→a} f(x) = f(a)",
+      "Differentiability implies continuity but not vice versa"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "derivatives",
+    "label": "Derivatives and Differentiation",
+    "subject": "calculus",
+    "requires": ["limits", "functions"],
+    "connects_to": ["chain_rule", "product_rule", "quotient_rule", "optimization", "related_rates", "kinematics"],
+    "common_errors": [
+      "Power rule error: d/dx(x^n) = x^(n-1) instead of n·x^(n-1)",
+      "Differentiating the constant inside trig: d/dx(sin(2x)) = cos(2x) not 2cos(2x)",
+      "Forgetting the chain rule for composite functions"
+    ],
+    "confusion_points": [
+      "The derivative is the instantaneous rate of change (slope of tangent)",
+      "dy/dx is not a fraction but behaves like one in many useful ways"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "chain_rule",
+    "label": "Chain Rule",
+    "subject": "calculus",
+    "requires": ["derivatives"],
+    "connects_to": ["implicit_differentiation", "related_rates", "u_substitution"],
+    "common_errors": [
+      "Forgetting to differentiate the inner function",
+      "Applying the chain rule when the function is not composite",
+      "Misidentifying the outer and inner functions in f(g(x))"
+    ],
+    "confusion_points": [
+      "d/dx[f(g(x))] = f'(g(x)) · g'(x) — derivative of outer times derivative of inner",
+      "Always ask: is there a function of a function here?"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "product_rule",
+    "label": "Product Rule",
+    "subject": "calculus",
+    "requires": ["derivatives"],
+    "connects_to": ["integration_by_parts"],
+    "common_errors": [
+      "d/dx(f·g) = f'·g' instead of f'·g + f·g'",
+      "Applying product rule when one factor is a constant",
+      "Forgetting to apply product rule to three-factor products"
+    ],
+    "confusion_points": [
+      "d/dx(u·v) = u'v + uv' — each factor differentiated once while the other remains",
+      "Constants have derivative zero, so product rule simplifies"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "quotient_rule",
+    "label": "Quotient Rule",
+    "subject": "calculus",
+    "requires": ["derivatives"],
+    "connects_to": ["derivatives"],
+    "common_errors": [
+      "Reversing numerator subtraction: (g·f' - f·g')/g² instead of (f'g - fg')/g²",
+      "Forgetting to square the denominator",
+      "Using quotient rule when rewriting as product is simpler"
+    ],
+    "confusion_points": [
+      "d/dx(f/g) = (f'g - fg') / g² — 'low d-high minus high d-low, over low squared'",
+      "The denominator must be squared, not just multiplied"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "implicit_differentiation",
+    "label": "Implicit Differentiation",
+    "subject": "calculus",
+    "requires": ["chain_rule"],
+    "connects_to": ["related_rates"],
+    "common_errors": [
+      "Forgetting to apply chain rule when differentiating y terms (adding dy/dx)",
+      "Treating y as a constant instead of a function of x",
+      "Not collecting dy/dx terms on one side"
+    ],
+    "confusion_points": [
+      "d/dx(y²) = 2y · dy/dx — chain rule applies because y depends on x",
+      "After differentiating, collect all dy/dx terms and solve algebraically"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Advanced"]
+  },
+  {
+    "id": "related_rates",
+    "label": "Related Rates",
+    "subject": "calculus",
+    "requires": ["derivatives", "chain_rule"],
+    "connects_to": ["optimization"],
+    "common_errors": [
+      "Substituting given values BEFORE differentiating with respect to time",
+      "Not identifying all variables changing with time",
+      "Forgetting to include units in the final answer"
+    ],
+    "confusion_points": [
+      "All variable quantities are functions of time t",
+      "Differentiate the geometric relationship implicitly with respect to t"
+    ],
+    "curriculum": ["JEE_Mains", "JEE_Advanced"]
+  },
+  {
+    "id": "optimization",
+    "label": "Optimization (Maxima and Minima)",
+    "subject": "calculus",
+    "requires": ["derivatives"],
+    "connects_to": ["related_rates"],
+    "common_errors": [
+      "Finding critical points but not testing whether they are max or min",
+      "Ignoring endpoint values for closed interval optimization",
+      "Setting the original function equal to zero instead of its derivative"
+    ],
+    "confusion_points": [
+      "Set f'(x) = 0 to find critical points; use second derivative test to classify",
+      "Always check endpoints when the domain is a closed interval"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "integrals",
+    "label": "Integration (Indefinite and Definite)",
+    "subject": "calculus",
+    "requires": ["derivatives", "limits"],
+    "connects_to": ["fundamental_theorem", "integration_by_parts", "u_substitution", "work_energy"],
+    "common_errors": [
+      "Forgetting the constant of integration C for indefinite integrals",
+      "Integrating as if it were differentiation: ∫x² dx = x³ not x³/3",
+      "Swapping limits of integration without negating"
+    ],
+    "confusion_points": [
+      "Integration is the reverse of differentiation — find a function whose derivative is given",
+      "Definite integral gives area; indefinite integral gives a family of functions"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "fundamental_theorem",
+    "label": "Fundamental Theorem of Calculus",
+    "subject": "calculus",
+    "requires": ["integrals", "derivatives"],
+    "connects_to": ["integrals"],
+    "common_errors": [
+      "Forgetting to evaluate the antiderivative at BOTH limits",
+      "Reversing the subtraction: F(a) - F(b) instead of F(b) - F(a)",
+      "Differentiating the integral incorrectly when the upper limit is a function"
+    ],
+    "confusion_points": [
+      "∫[a to b] f(x)dx = F(b) - F(a) where F is any antiderivative of f",
+      "d/dx[∫[a to x] f(t)dt] = f(x) — differentiation undoes integration"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "integration_by_parts",
+    "label": "Integration by Parts",
+    "subject": "calculus",
+    "requires": ["integrals", "product_rule"],
+    "connects_to": ["integrals"],
+    "common_errors": [
+      "Wrong choice of u and dv (LIATE rule helps: Log, Inverse trig, Algebraic, Trig, Exponential)",
+      "Forgetting to integrate dv completely before applying the formula",
+      "Not recognising when to apply the formula twice"
+    ],
+    "confusion_points": [
+      "∫u dv = uv - ∫v du — choose u to be the function that simplifies when differentiated",
+      "LIATE gives the priority order for choosing u"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains", "JEE_Advanced"]
+  },
+  {
+    "id": "u_substitution",
+    "label": "Integration by Substitution (u-substitution)",
+    "subject": "calculus",
+    "requires": ["integrals", "chain_rule"],
+    "connects_to": ["integrals"],
+    "common_errors": [
+      "Forgetting to substitute dx in terms of du",
+      "Not changing the limits of integration for definite integrals",
+      "Choosing u as a constant or something that doesn't simplify the integral"
+    ],
+    "confusion_points": [
+      "If u = g(x) then du = g'(x)dx — rewrite everything in terms of u",
+      "For definite integrals, change x-limits to u-limits or substitute back before evaluating"
+    ],
+    "curriculum": ["CBSE_12", "JEE_Mains"]
+  },
+  {
+    "id": "vectors",
+    "label": "Vectors",
+    "subject": "physics",
+    "requires": ["basic_trig_ratios", "arithmetic"],
+    "connects_to": ["kinematics", "newtons_first_law", "newtons_second_law"],
+    "common_errors": [
+      "Adding magnitudes instead of component-wise: |A+B| ≠ |A| + |B|",
+      "Confusing vector and scalar quantities",
+      "Wrong angle reference when resolving components"
+    ],
+    "confusion_points": [
+      "Vectors have both magnitude AND direction; scalars have only magnitude",
+      "Always resolve into x and y components before adding"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "kinematics",
+    "label": "Kinematics (Motion in 1D and 2D)",
+    "subject": "physics",
+    "requires": ["derivatives", "quadratics"],
+    "connects_to": ["newtons_second_law", "work_energy"],
+    "common_errors": [
+      "Using v = u + at when acceleration is not constant",
+      "Confusing displacement (vector) with distance (scalar)",
+      "Wrong sign convention: choosing up as positive but applying it inconsistently"
+    ],
+    "confusion_points": [
+      "The five kinematic equations only apply for constant acceleration",
+      "Displacement is the area under a v-t graph; acceleration is the slope"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "newtons_first_law",
+    "label": "Newton's First Law (Inertia)",
+    "subject": "physics",
+    "requires": ["vectors"],
+    "connects_to": ["newtons_second_law"],
+    "common_errors": [
+      "Believing a moving object needs a force to keep moving",
+      "Ignoring friction as the force that causes deceleration",
+      "Confusing inertia with mass"
+    ],
+    "confusion_points": [
+      "Objects in motion stay in motion unless acted on by a net external force",
+      "Zero net force means constant velocity, not zero velocity"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "newtons_second_law",
+    "label": "Newton's Second Law (F = ma)",
+    "subject": "physics",
+    "requires": ["vectors", "derivatives"],
+    "connects_to": ["newtons_third_law", "work_energy", "momentum", "circular_motion", "gravitation"],
+    "common_errors": [
+      "Using total mass instead of the object's mass when multiple objects are present",
+      "Adding force magnitudes without accounting for directions",
+      "Forgetting to include all forces in the free body diagram"
+    ],
+    "confusion_points": [
+      "F_net = ma — it is the NET (resultant) force, not any single force",
+      "Draw a free body diagram to identify all forces before summing"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "newtons_third_law",
+    "label": "Newton's Third Law (Action-Reaction)",
+    "subject": "physics",
+    "requires": ["newtons_second_law"],
+    "connects_to": ["momentum"],
+    "common_errors": [
+      "Treating action-reaction pairs as cancelling each other (they act on DIFFERENT objects)",
+      "Confusing Newton's 3rd law pairs with balanced forces",
+      "Applying action-reaction to forces on the same body"
+    ],
+    "confusion_points": [
+      "Action and reaction are equal in magnitude, opposite in direction, on DIFFERENT bodies",
+      "They do not cancel because they act on different objects"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "work_energy",
+    "label": "Work, Energy, and Power",
+    "subject": "physics",
+    "requires": ["integrals", "newtons_second_law"],
+    "connects_to": ["thermochemistry"],
+    "common_errors": [
+      "Work = F × d only when F is parallel to d (must use F·d·cosθ generally)",
+      "Confusing kinetic energy (½mv²) with momentum (mv)",
+      "Forgetting that work done by friction is always negative"
+    ],
+    "confusion_points": [
+      "Work = F·d·cosθ where θ is the angle between force and displacement",
+      "Work-energy theorem: W_net = ΔKE"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "momentum",
+    "label": "Momentum and Impulse",
+    "subject": "physics",
+    "requires": ["newtons_second_law"],
+    "connects_to": ["newtons_third_law"],
+    "common_errors": [
+      "Ignoring direction in collision problems (momentum is a vector)",
+      "Confusing elastic and inelastic collision conditions",
+      "Applying conservation of momentum when external forces are present"
+    ],
+    "confusion_points": [
+      "Momentum p = mv is conserved when net external force is zero",
+      "Impulse = F·Δt = Δp — force applied over time changes momentum"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "circular_motion",
+    "label": "Circular Motion",
+    "subject": "physics",
+    "requires": ["derivatives", "vectors"],
+    "connects_to": ["gravitation"],
+    "common_errors": [
+      "Centripetal force is not a new force — it is the net inward force",
+      "Using wrong formula: ac = v²/r not v/r or v²·r",
+      "Forgetting that speed is constant in uniform circular motion but velocity is not"
+    ],
+    "confusion_points": [
+      "Centripetal acceleration = v²/r always points toward the centre",
+      "Any force providing centripetal acceleration (tension, gravity, normal) depends on context"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "gravitation",
+    "label": "Gravitation",
+    "subject": "physics",
+    "requires": ["newtons_second_law"],
+    "connects_to": ["circular_motion", "work_energy"],
+    "common_errors": [
+      "Using g = 9.8 m/s² at heights where it no longer applies",
+      "Confusing gravitational force with weight (W = mg is weight, F = Gm₁m₂/r² is gravitational)",
+      "Forgetting that r is the distance from the centre of mass, not the surface"
+    ],
+    "confusion_points": [
+      "Universal law: F = Gm₁m₂/r² — force between any two masses",
+      "Orbital mechanics: gravitational force provides centripetal force"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "atomic_structure",
+    "label": "Atomic Structure",
+    "subject": "chemistry",
+    "requires": ["arithmetic"],
+    "connects_to": ["periodic_table", "chemical_bonding", "mole_concept"],
+    "common_errors": [
+      "Confusing atomic number (protons) with mass number (protons + neutrons)",
+      "Placing electrons without following Aufbau, Pauli exclusion, Hund's rules",
+      "Confusing isotopes (same protons, different neutrons) with isobars"
+    ],
+    "confusion_points": [
+      "Atomic number = number of protons (defines the element)",
+      "Electron configuration determines chemical properties"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "periodic_table",
+    "label": "Periodic Table and Trends",
+    "subject": "chemistry",
+    "requires": ["atomic_structure"],
+    "connects_to": ["chemical_bonding", "acids_bases"],
+    "common_errors": [
+      "Electronegativity trend: wrongly thinking it increases down a group",
+      "Atomic radius trend: confusing period (decreases left to right) and group trends",
+      "Ionization energy exceptions: N > O due to half-filled p subshell stability"
+    ],
+    "confusion_points": [
+      "Periodic trends arise from nuclear charge and shielding effects",
+      "Exceptions exist (e.g. IP: N > O) due to subshell stability"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "chemical_bonding",
+    "label": "Chemical Bonding",
+    "subject": "chemistry",
+    "requires": ["atomic_structure", "periodic_table"],
+    "connects_to": ["mole_concept"],
+    "common_errors": [
+      "Forgetting lone pairs when drawing Lewis structures",
+      "Confusing sigma and pi bonds in multiple bonds",
+      "Wrong VSEPR geometry when lone pairs are present"
+    ],
+    "confusion_points": [
+      "Octet rule: atoms bond to achieve 8 valence electrons (H needs 2)",
+      "Lone pairs on central atom distort geometry relative to electron geometry"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "mole_concept",
+    "label": "Mole Concept and Avogadro's Number",
+    "subject": "chemistry",
+    "requires": ["arithmetic"],
+    "connects_to": ["stoichiometry", "chemical_equations", "acids_bases"],
+    "common_errors": [
+      "Confusing moles with mass: n = m/M not n = m",
+      "Using Avogadro's number incorrectly for moles of molecules vs atoms",
+      "Forgetting to use molar mass (g/mol) not atomic mass (amu) for bulk calculations"
+    ],
+    "confusion_points": [
+      "1 mole = 6.022 × 10²³ particles (Avogadro's number)",
+      "Molar mass numerically equals atomic/molecular weight in g/mol"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "chemical_equations",
+    "label": "Chemical Equations and Balancing",
+    "subject": "chemistry",
+    "requires": ["mole_concept"],
+    "connects_to": ["stoichiometry", "acids_bases"],
+    "common_errors": [
+      "Changing subscripts instead of coefficients to balance",
+      "Not balancing polyatomic ions as a unit when they appear on both sides",
+      "Forgetting to check if all atoms AND charges are balanced in ionic equations"
+    ],
+    "confusion_points": [
+      "Balance by adjusting coefficients ONLY — subscripts define the compound",
+      "Check all elements and charges after balancing"
+    ],
+    "curriculum": ["CBSE_10", "CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "stoichiometry",
+    "label": "Stoichiometry",
+    "subject": "chemistry",
+    "requires": ["mole_concept", "chemical_equations"],
+    "connects_to": ["thermochemistry"],
+    "common_errors": [
+      "Not converting grams to moles before using mole ratios",
+      "Using the wrong mole ratio from the equation",
+      "Forgetting to identify the limiting reagent in excess reagent problems"
+    ],
+    "confusion_points": [
+      "Mole ratio from balanced equation = conversion factor between reactants/products",
+      "Limiting reagent determines the maximum product formed"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "acids_bases",
+    "label": "Acids, Bases, and pH",
+    "subject": "chemistry",
+    "requires": ["mole_concept", "chemical_equations"],
+    "connects_to": ["stoichiometry"],
+    "common_errors": [
+      "pH = -log[H+] but students use log[H+] without the negative sign",
+      "Confusing strong/weak acid with concentrated/dilute acid",
+      "Forgetting that pH + pOH = 14 at 25°C only"
+    ],
+    "confusion_points": [
+      "Strong acid/base fully dissociates; weak acid/base partially dissociates",
+      "pH = -log[H+]; a lower pH means MORE acidic (higher [H+])"
+    ],
+    "curriculum": ["CBSE_11", "JEE_Mains"]
+  },
+  {
+    "id": "thermochemistry",
+    "label": "Thermochemistry and Hess's Law",
+    "subject": "chemistry",
+    "requires": ["stoichiometry", "work_energy"],
+    "connects_to": [],
+    "common_errors": [
+      "Forgetting to reverse the sign of ΔH when reversing a reaction",
+      "Not multiplying ΔH by stoichiometric coefficients when scaling a reaction",
+      "Confusing ΔH (enthalpy) with internal energy ΔU"
+    ],
+    "confusion_points": [
+      "Hess's law: ΔH is path-independent — add reactions to get target reaction",
+      "Exothermic: ΔH < 0 (system loses heat); endothermic: ΔH > 0"
+    ],
+    "curriculum": ["CBSE_11", "CBSE_12", "JEE_Mains"]
+  }
+]

@@ -129,12 +129,33 @@ async def stream_chat(
     req: SendMessageRequest,
     user_id: str = Depends(get_current_user),
 ):
-    result = await master_controller.handle_query(
-        user_id=user_id,
-        query=req.content,
-        source="chat",
-        session_id=req.session_id,
-    )
+    import structlog
+    logger = structlog.get_logger("equated.routers.chat")
+
+    try:
+        result = await master_controller.handle_query(
+            user_id=user_id,
+            query=req.content,
+            source="chat",
+            session_id=req.session_id,
+        )
+    except Exception as e:
+        logger.error("chat_stream_failed", user_id=user_id[:8], error=str(e))
+
+        # Return an SSE stream with a single error event so the frontend
+        # error recovery UX can display the message and offer retry.
+        import json as _json
+
+        async def error_stream():
+            error_event = {"type": "error", "message": "Something went wrong. Please try again."}
+            yield f"data: {_json.dumps(error_event)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return streaming_service.create_sse_response(
+            error_stream(),
+            model_name="",
+            session_id=req.session_id,
+        )
 
     async def token_stream():
         text = result.response.raw_text
@@ -153,6 +174,9 @@ async def stream_chat(
             "strategy": result.trace.strategy,
             "tool_used": result.trace.tool_used,
             "validation_passed": result.trace.validation_passed,
-            **({"debug": {**result.debug_plan, "execution_echo": result.execution_echo}} if req.debug else {}),
+            "verified": result.response.verified,
+            "verification_confidence": result.response.verification_confidence,
+            "math_check_passed": result.response.math_check_passed,
+            **({**result.debug_plan, "execution_echo": result.execution_echo} if req.debug else {}),
         },
     )

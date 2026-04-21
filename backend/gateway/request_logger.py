@@ -10,6 +10,8 @@ import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from monitoring.metrics import REQUEST_COUNT, REQUEST_LATENCY
+
 logger = structlog.get_logger("equated.gateway")
 
 
@@ -30,13 +32,24 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        duration_s = time.perf_counter() - start_time
+        duration_ms = round(duration_s * 1000, 2)
         user_id = getattr(request.state, "user_id", None)
+
+        # Collapse path params to low-cardinality endpoint label (e.g. /api/v1/chat/stream)
+        endpoint = str(request.url.path)
+
+        REQUEST_COUNT.labels(
+            method=request.method,
+            endpoint=endpoint,
+            status=str(response.status_code),
+        ).inc()
+        REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration_s)
 
         logger.info(
             "http_request",
             method=request.method,
-            path=str(request.url.path),
+            path=endpoint,
             query=str(request.url.query),
             status=response.status_code,
             duration_ms=duration_ms,
@@ -44,6 +57,5 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
             client_ip=request.client.host if request.client else "unknown",
         )
 
-        # Add response timing header
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
         return response

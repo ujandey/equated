@@ -133,21 +133,31 @@ class AdaptiveExplainerService:
         level: ExplanationLevel,
         preferred_provider: str | None = None,
         teaching_directives: list[str] | None = None,
+        prompt_override: str | None = None,
     ) -> str:
-        """Generate an explanation using the first available LLM provider."""
+        """
+        Generate an explanation using the first available LLM provider.
+
+        When *prompt_override* is provided it replaces the template-based user
+        message entirely.  This is used by the ExplanationPathBuilder to pass a
+        fully-scripted prompt to the LLM.
+        """
         template = PROMPT_TEMPLATES[level]
-        messages = [
-            {"role": "system", "content": template.system},
-            {
-                "role": "user",
-                "content": self._build_user_prompt(
-                    template=template,
-                    problem=problem,
-                    solution=solution,
-                    teaching_directives=teaching_directives,
-                ),
-            },
-        ]
+        if prompt_override:
+            messages = [{"role": "user", "content": prompt_override}]
+        else:
+            messages = [
+                {"role": "system", "content": template.system},
+                {
+                    "role": "user",
+                    "content": self._build_user_prompt(
+                        template=template,
+                        problem=problem,
+                        solution=solution,
+                        teaching_directives=teaching_directives,
+                    ),
+                },
+            ]
 
         last_error: Exception | None = None
         for provider in self._provider_sequence(preferred_provider):
@@ -190,9 +200,14 @@ class AdaptiveExplainerService:
         preferred_provider: str | None = None,
         prefer_existing_text: bool = False,
         teaching_directives: list[str] | None = None,
+        prompt_override: str | None = None,
     ) -> tuple[StructuredExplanation, ExplanationLevel]:
         """
         Generate and parse a level-adaptive explanation into the standard schema.
+
+        When *prompt_override* is provided it is forwarded to generate_explanation,
+        replacing the default template.  This allows the ExplanationPathBuilder to
+        supply a fully-scripted LLM prompt.
         """
         resolved_level = level or self.infer_level(student_model)
         if prefer_existing_text:
@@ -205,6 +220,7 @@ class AdaptiveExplainerService:
             resolved_level,
             preferred_provider=preferred_provider,
             teaching_directives=teaching_directives,
+            prompt_override=prompt_override,
         )
         structured = explanation_generator.generate(adaptive_text, problem)
         return structured, resolved_level

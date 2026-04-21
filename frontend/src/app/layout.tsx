@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 
 export const metadata: Metadata = {
   title: "Equated — AI STEM Learning Assistant",
@@ -23,7 +24,7 @@ export default function RootLayout({
         {/* Atmospheric Glows */}
         <div className="fixed top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/5 blur-[120px] rounded-full pointer-events-none z-0"></div>
         <div className="fixed bottom-[-5%] left-[20%] w-[400px] h-[400px] bg-secondary/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
-        {children}
+        <AnalyticsProvider>{children}</AnalyticsProvider>
       </body>
     </html>
   );

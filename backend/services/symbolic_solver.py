@@ -363,8 +363,12 @@ class SymbolicSolver:
         if not text:
             return None
 
+        # ── Solve patterns (expanded for student phrasing) ──
         solve_match = re.match(
-            r"^(?:please\s+)?(?:solve|find\s+roots\s+of|find\s+the\s+roots\s+of)\s+(.+)$",
+            r"^(?:please\s+)?(?:can\s+you\s+)?(?:help\s+me\s+)?"
+            r"(?:solve|find\s+roots?\s+of|find\s+the\s+roots?\s+of|"
+            r"find\s+the\s+value\s+of|find\s+the\s+solution\s+(?:to|of|for)|"
+            r"what\s+is|what'?s|whats|work\s+out|figure\s+out|find)\s+(.+)$",
             lowered,
         )
         if solve_match:
@@ -376,8 +380,10 @@ class SymbolicSolver:
                 extra={"heuristic_confidence": "high" if "=" in expression else "medium"},
             )
 
+        # ── Derivative patterns (expanded) ──
         derivative_match = re.match(
-            r"^(?:find\s+)?(?:the\s+)?(?:derivative|differentiate)(?:\s+of)?\s+(.+)$",
+            r"^(?:please\s+)?(?:can\s+you\s+)?(?:find\s+)?(?:the\s+)?"
+            r"(?:derivative|differentiate|diff|d/d[a-z])(?:\s+of)?\s+(.+)$",
             lowered,
         )
         if derivative_match:
@@ -389,8 +395,10 @@ class SymbolicSolver:
                 extra={"heuristic_confidence": "high"},
             )
 
+        # ── Integral patterns (expanded) ──
         integral_match = re.match(
-            r"^(?:find\s+)?(?:the\s+)?(?:integral|integrate)(?:\s+of)?\s+(.+)$",
+            r"^(?:please\s+)?(?:can\s+you\s+)?(?:find\s+)?(?:the\s+)?"
+            r"(?:integral|integrate|int)(?:\s+of)?\s+(.+)$",
             lowered,
         )
         if integral_match:
@@ -402,7 +410,8 @@ class SymbolicSolver:
                 extra={"heuristic_confidence": "high"},
             )
 
-        simplify_match = re.match(r"^(?:please\s+)?simplify\s+(.+)$", lowered)
+        # ── Simplify ──
+        simplify_match = re.match(r"^(?:please\s+)?(?:can\s+you\s+)?simplify\s+(.+)$", lowered)
         if simplify_match:
             expression = self._normalize_expression(simplify_match.group(1))
             return ExtractedExpression(
@@ -411,15 +420,23 @@ class SymbolicSolver:
                 variable=self._infer_variable(expression),
             )
 
-        evaluate_match = re.match(r"^(?:please\s+)?(?:evaluate|calculate|compute)\s+(.+)$", lowered)
+        # ── Evaluate patterns (expanded) ──
+        evaluate_match = re.match(
+            r"^(?:please\s+)?(?:can\s+you\s+)?"
+            r"(?:evaluate|calculate|compute|work\s+out|what\s+is|what'?s|whats)\s+(.+)$",
+            lowered,
+        )
         if evaluate_match:
             expression = self._normalize_expression(evaluate_match.group(1))
-            return ExtractedExpression(
-                operation="evaluate",
-                expression=expression,
-                variable=self._infer_variable(expression),
-            )
+            # Only match if there's actual math content
+            if _EXPRESSION_HINT_PATTERN.search(expression):
+                return ExtractedExpression(
+                    operation="evaluate",
+                    expression=expression,
+                    variable=self._infer_variable(expression),
+                )
 
+        # ── Limit ──
         limit_match = re.match(
             r"^(?:find\s+)?(?:the\s+)?limit\s+of\s+(.+?)\s+as\s+([a-z])\s*->\s*([^\s]+)$",
             lowered,
@@ -472,14 +489,30 @@ class SymbolicSolver:
         return "x"
 
     def _normalize_expression(self, expression: str) -> str:
-        expr = expression.strip().rstrip("?.")
+        expr = expression.strip().rstrip("?.!")
+
+        # Strip filler words students add
+        expr = re.sub(r"\b(?:pls|please|thanks|thank\s+you|for\s+me|can\s+you|help\s+me|i\s+need\s+to)\b", "", expr, flags=re.IGNORECASE)
+
+        # Spoken math → operators
+        expr = re.sub(r"\bsquared\b", "**2", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bcubed\b", "**3", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bto\s+the\s+power\s+(?:of\s+)?(\d+)", r"**\1", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bsquare\s+root\s+(?:of\s+)?", "sqrt(", expr, flags=re.IGNORECASE)
+
+        # Standard operator words
         expr = expr.replace("^", "**")
-        expr = re.sub(r"\bplus\b", "+", expr)
-        expr = re.sub(r"\bminus\b", "-", expr)
-        expr = re.sub(r"\btimes\b", "*", expr)
-        expr = re.sub(r"\bmultiplied by\b", "*", expr)
-        expr = re.sub(r"\bdivided by\b", "/", expr)
+        expr = re.sub(r"\bplus\b", "+", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bminus\b", "-", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\btimes\b", "*", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bmultiplied\s+by\b", "*", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bdivided\s+by\b", "/", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bover\b", "/", expr, flags=re.IGNORECASE)
+
+        # Implicit multiplication: 2x → 2*x, 3( → 3*(
         expr = re.sub(r"(?<=\d)\s*(?=[a-zA-Z(])", "*", expr)
+
+        # Clean up whitespace
         expr = re.sub(r"\s+", " ", expr).strip()
         return expr
 

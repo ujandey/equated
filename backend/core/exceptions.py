@@ -7,6 +7,7 @@ Every exception carries a machine-readable error code and human message.
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+import sentry_sdk
 import structlog
 
 logger = structlog.get_logger("equated.core.exceptions")
@@ -144,6 +145,15 @@ def register_exception_handlers(app: FastAPI):
             message=exc.message,
             path=str(request.url.path),
         )
+        # Report 5xx EquatedErrors to Sentry (e.g. AIServiceError, CacheError)
+        if exc.status_code >= 500:
+            with sentry_sdk.new_scope() as scope:
+                scope.set_tag("error_code", exc.error_code)
+                scope.set_context("request", {"path": str(request.url.path), "method": request.method})
+                user_id = getattr(request.state, "user_id", None)
+                if user_id:
+                    scope.set_user({"id": user_id})
+                sentry_sdk.capture_exception(exc)
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -161,6 +171,13 @@ def register_exception_handlers(app: FastAPI):
             error_type=type(exc).__name__,
             path=str(request.url.path),
         )
+        with sentry_sdk.new_scope() as scope:
+            scope.set_tag("unhandled", True)
+            scope.set_context("request", {"path": str(request.url.path), "method": request.method})
+            user_id = getattr(request.state, "user_id", None)
+            if user_id:
+                scope.set_user({"id": user_id})
+            sentry_sdk.capture_exception(exc)
         return JSONResponse(
             status_code=500,
             content={
