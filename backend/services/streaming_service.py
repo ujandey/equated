@@ -106,8 +106,13 @@ class StreamingService:
             )
 
         except Exception as e:
-            logger.error("stream_error", error=str(e), tokens_so_far=total_tokens)
-            error_event = {"type": "error", "message": str(e)}
+            logger.error(
+                "stream_error",
+                error=str(e),
+                tokens_so_far=total_tokens,
+                exc_info=True,
+            )
+            error_event = {"type": "error", "message": "An internal error occurred."}
             yield f"data: {json.dumps(error_event)}\n\n"
             yield "data: [DONE]\n\n"
 
