@@ -264,17 +264,27 @@ class ResponseAssembler:
         ]
         for step in steps:
             lines.append(f"Step {step['step']}: {step['explanation']}")
-        lines.extend(["", "**Final Answer**", final_answer, "", "**Quick Summary**", simple_explanation])
+        # Wrap in $$...$$ so remarkMath/rehypeKatex renders it; skip if already delimited.
+        final_display = (
+            f"$${final_answer}$$"
+            if final_answer and not final_answer.strip().startswith("$")
+            else final_answer
+        )
+        lines.extend(["", "**Final Answer**", final_display, "", "**Quick Summary**", simple_explanation])
         if coach_feedback:
             lines.extend(["", "**Coach Feedback**", coach_feedback])
         return "\n".join(lines).strip()
 
     @staticmethod
     def symbolic_payload(symbolic_solution) -> str:
-        """Return a clean, human-readable answer from SymPy computation (no raw SymPy syntax)."""
+        """Return the LaTeX-formatted answer from SymPy computation."""
         result = symbolic_solution.math_result
         if not result:
             return ""
+        # Prefer latex_result so downstream consumers (LLM, frontend) receive
+        # proper LaTeX instead of raw SymPy operator syntax (e**x, *, etc.).
+        if result.latex_result:
+            return result.latex_result
         raw = result.result
         if raw is None:
             return ""

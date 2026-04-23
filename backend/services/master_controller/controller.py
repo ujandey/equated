@@ -328,6 +328,11 @@ class MasterController:
                     (_assembled.final_answer or clean_answer or "").strip().replace("\n", " ")
                 )
                 if display_answer:
+                    # Wrap in $$...$$ so remarkMath/rehypeKatex renders it during
+                    # streaming.  KaTeXDisplay on the done-event SolutionCard path
+                    # strips delimiters itself, so this is safe for both paths.
+                    if not display_answer.startswith("$"):
+                        display_answer = f"$${display_answer}$$"
                     _assembled.raw_text = (
                         f"::cross-checked::{display_answer}\n\n"
                         + (_assembled.raw_text or "")
