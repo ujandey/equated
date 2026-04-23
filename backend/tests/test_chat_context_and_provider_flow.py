@@ -125,6 +125,7 @@ async def test_master_controller_uses_follow_up_subject_for_routing(monkeypatch)
                 quick_summary="Flux equals enclosed charge over permittivity.",
             ),
             "beginner",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)

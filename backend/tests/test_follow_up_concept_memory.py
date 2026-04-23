@@ -42,6 +42,7 @@ async def test_follow_up_formula_query_includes_topic_memory(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     async def _get_block(_block_id: str):

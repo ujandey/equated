@@ -49,7 +49,10 @@ async def list_sessions(
     user_id: str = Depends(get_current_user),
     limit: int = Query(default=20, ge=1, le=100),
 ):
-    sessions = await session_manager.list_sessions(user_id, limit)
+    try:
+        sessions = await session_manager.list_sessions(user_id, limit)
+    except Exception:
+        return {"sessions": []}
     return {
         "sessions": [
             {
@@ -163,6 +166,27 @@ async def stream_chat(
             await asyncio.sleep(0)
             yield text[i:i + 80]
 
+    # Build structured solve payload for the frontend SolutionCard renderer.
+    # Only included when the response is a solve intent so conversational replies
+    # stay lightweight.
+    solution_payload: dict = {}
+    if result.trace.intent == "solve":
+        verification_status = "verified" if result.response.verified else "partial" if result.response.math_check_passed else "unverified"
+        solution_payload = {
+            "solution": {
+                "problem_interpretation": result.response.problem_interpretation,
+                "concept_used": result.response.concept,
+                "concept_explanation": getattr(result.response, 'concept_explanation', ''),
+                "subject_hint": getattr(result.response, 'subject_hint', ''),
+                "quick_summary": result.response.quick_summary or result.response.simple_explanation,
+                "answer_summary": getattr(result.response, 'answer_summary', '') or result.response.quick_summary or result.response.simple_explanation,
+                "final_answer": result.response.final_answer,
+                "steps": result.response.steps,
+                "verification_status": verification_status,
+                "confidence": result.response.confidence,
+            }
+        }
+
     return streaming_service.create_sse_response(
         token_stream(),
         model_name=result.response.model_used,
@@ -177,6 +201,7 @@ async def stream_chat(
             "verified": result.response.verified,
             "verification_confidence": result.response.verification_confidence,
             "math_check_passed": result.response.math_check_passed,
+            **solution_payload,
             **({**result.debug_plan, "execution_echo": result.execution_echo} if req.debug else {}),
         },
     )

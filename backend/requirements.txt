@@ -19,7 +19,10 @@ tiktoken>=0.6.0              # token counting for cost tracking
 sympy>=1.12
 
 # ── OCR & Parsing ────────────────
+google-generativeai>=0.7.0
+pix2tex>=0.1.2
 pytesseract>=0.3.10
+opencv-python-headless>=4.9.0
 Pillow>=10.2.0
 
 # ── Database ─────────────────────

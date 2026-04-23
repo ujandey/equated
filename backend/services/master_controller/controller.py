@@ -191,8 +191,12 @@ class MasterController:
         if session_id:
             return session_id
         if source == "chat":
-            session = await session_manager.create_session(user_id)
-            return session.id
+            try:
+                session = await session_manager.create_session(user_id)
+                return session.id
+            except Exception as exc:
+                logger.warning("session_create_failed", error=str(exc), user_id=user_id[:8])
+                return None
         return None
 
     async def _select_context(self, *, session_id: str | None, query: str) -> TopicRoutingDecision | None:
@@ -270,16 +274,11 @@ class MasterController:
             except Exception:
                 pass
 
-            structured, _ = await adaptive_explainer.generate_structured_explanation(
+            clean_answer = response_assembler_service.symbolic_payload(symbolic_solution)
+            json_solution = await adaptive_explainer.generate_structured_json_solution(
                 problem=presentation_query,
-                solution=response_assembler_service.symbolic_payload(symbolic_solution),
-                student_model=student_state,
+                sympy_result=clean_answer,
                 preferred_provider=preferred_provider,
-                teaching_directives=self._teaching_directives(execution_plan),
-                prompt_override=llm_prompt_override,
-            )
-            structured = response_assembler_service.hydrate_structured_explanation(
-                structured, structured.final_answer or response_assembler_service.symbolic_payload(symbolic_solution), presentation_query
             )
             confidence = compute_confidence_report(
                 parse_confidence="high",
@@ -294,18 +293,18 @@ class MasterController:
                 from cache.redis_cache import redis_client
                 try:
                     await redis_client.client.setex(f"session:{session_id}:last_problem", 3600, presentation_query)
-                    if structured.quick_summary:
-                        await redis_client.client.setex(f"session:{session_id}:last_summary", 3600, structured.quick_summary)
+                    answer_summary = json_solution.get("answer_summary", "")
+                    if answer_summary:
+                        await redis_client.client.setex(f"session:{session_id}:last_summary", 3600, answer_summary)
                 except Exception as e:
                     logger.warning("failed_to_save_session_context", error=str(e), session_id=session_id)
 
             raw_result = symbolic_solution.math_result.result
             math_engine_str = str(raw_result) if raw_result is not None else None
-            _assembled = response_assembler_service.assemble_response(
-                structured=structured,
+            _assembled = response_assembler_service.assemble_structured_response(
+                json_solution=json_solution,
                 confidence=confidence,
                 coach_feedback=response_assembler_service.coach_feedback(coaching_decision),
-                model_used="adaptive_explainer",
                 math_engine_result=math_engine_str,
                 credits_remaining=credits_remaining,
             )
@@ -320,6 +319,19 @@ class MasterController:
                     (_assembled.coach_feedback or "")
                     + f"\n\n{socratic_probe.question_text}"
                 ).strip()
+
+            # Prepend verified answer callout when SymPy confirmed the result.
+            # The frontend parses the ::cross-checked:: marker and renders a
+            # styled badge before the solution body.
+            if confidence.verified:
+                display_answer = (
+                    (_assembled.final_answer or clean_answer or "").strip().replace("\n", " ")
+                )
+                if display_answer:
+                    _assembled.raw_text = (
+                        f"::cross-checked::{display_answer}\n\n"
+                        + (_assembled.raw_text or "")
+                    )
 
             return _assembled, "sympy"
             
@@ -426,7 +438,8 @@ class MasterController:
         # Invoke via new decoupled Circuit Breaker wrapper
         result = await controller_fallback_handler.generate_with_fallback(messages, decision, user_id)
         
-        structured, _ = await adaptive_explainer.generate_structured_explanation(
+        # For explain-only queries, use the existing text path (no SymPy result)
+        structured, _, _ = await adaptive_explainer.generate_structured_explanation(
             problem=query,
             solution=result.content,
             student_model=student_state,

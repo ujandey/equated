@@ -6,6 +6,8 @@ These are Pydantic models for request/response validation,
 NOT ORM models (we use raw asyncpg queries).
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import uuid4
@@ -23,14 +25,28 @@ class SolveRequest(BaseModel):
     debug: bool = False
 
 
+class SolutionStep(BaseModel):
+    """A single step in a structured solution."""
+    number: int
+    title: str
+    explanation: str
+    equation: str | None = None
+    # Legacy fields for backward compatibility
+    step: int | None = None
+    rule: str | None = None
+
+
 class SolveResponse(BaseModel):
     """Structured solve response."""
     solve_id: str = Field(default_factory=lambda: str(uuid4()))
     problem_interpretation: str = ""
     concept_used: str = ""
+    concept_explanation: str = ""
+    subject_hint: str = ""
     steps: list[dict] = []
-    final_answer: str = ""
+    final_answer: str = ""           # LaTeX only for structured responses
     quick_summary: str = ""
+    answer_summary: str = ""         # One plain English sentence
     alternative_method: str | None = None
     common_mistakes: str | None = None
     model_used: str = ""
@@ -38,8 +54,10 @@ class SolveResponse(BaseModel):
     parser_confidence: str | None = None
     verified: bool = False
     verification_confidence: str | None = None
+    verification_status: Literal["verified", "unverified", "partial"] = "unverified"
     math_check_passed: bool = False
     math_engine_result: str | None = None
+    confidence: float = 0.0
     cached: bool = False
     credits_remaining: int | None = None
     debug: dict | None = None
@@ -132,6 +150,24 @@ class AdminCostReport(BaseModel):
     cost_by_model: dict
     cache_hit_rate: float
     credits_sold: int
+
+
+# ── Image Solve Models ──────────────────────────────
+
+class QuestionOption(BaseModel):
+    """A single question extracted from an image."""
+    id: str
+    text: str
+    latex: str
+    subject_hint: str
+
+
+class MultiQuestionResponse(BaseModel):
+    """Returned when an image contains more than one detectable question."""
+    status: Literal["multi_question"] = "multi_question"
+    questions: list[QuestionOption]
+    image_type: str
+    engine_used: str
 
 
 # ── Ads Models ──────────────────────────────────────

@@ -29,7 +29,10 @@ class OrderCreateRequest(BaseModel):
 @router.get("/credits/balance")
 async def get_balance(user_id: str = Depends(get_current_user)):
     """Get current user's credit balance and usage stats."""
-    return await credit_service.get_balance(user_id)
+    try:
+        return await credit_service.get_balance(user_id)
+    except Exception:
+        return {"credits": 0, "tier": "free", "daily_solves_used": 0, "daily_limit": 10}
 
 
 @router.get("/credits/packs")

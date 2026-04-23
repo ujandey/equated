@@ -5,6 +5,9 @@ Converts raw AI output into Equated's structured pedagogical format.
 Ensures consistent response structure across all model providers.
 """
 
+from __future__ import annotations
+
+import re
 from dataclasses import dataclass
 
 
@@ -33,10 +36,10 @@ class ExplanationGenerator:
 
     SECTION_MARKERS = {
         "problem_interpretation": ["problem interpretation", "understanding the problem", "given"],
-        "concept_used": ["concept", "formula", "theorem", "law", "rule"],
-        "final_answer": ["final answer", "answer", "result", "solution"],
-        "quick_summary": ["summary", "recap", "in short"],
-        "alternative_method": ["alternative", "other method", "another approach"],
+        "concept_used": ["concept used", "concept:", "formula used", "theorem", "method used", "key concept"],
+        "final_answer": ["final answer", "answer:", "result:", "solution:"],
+        "quick_summary": ["quick summary", "summary:", "recap:", "in short", "in summary"],
+        "alternative_method": ["alternative method", "other method", "another approach"],
         "common_mistakes": ["common mistake", "pitfall", "watch out"],
     }
 
@@ -58,25 +61,54 @@ class ExplanationGenerator:
         )
 
     def _parse_sections(self, text: str) -> dict[str, str]:
-        """Extract named sections from the output."""
-        sections = {}
+        """
+        Extract named sections from the output.
+
+        Only matches lines that look like headers (start with ##/# or are short bold lines),
+        not arbitrary lines that happen to contain a keyword.
+        """
+        sections: dict[str, str] = {}
         lines = text.split("\n")
-        current_section = None
-        current_content = []
+        current_section: str | None = None
+        current_content: list[str] = []
+
+        _header_re = re.compile(r"^(#{1,4})\s+(.+)$")
+        _bold_re = re.compile(r"^\*\*(.+?)\*\*\s*$")
 
         for line in lines:
-            line_lower = line.lower().strip()
-            matched = False
-            for section_key, markers in self.SECTION_MARKERS.items():
-                if any(marker in line_lower for marker in markers):
+            stripped = line.strip()
+            if not stripped:
+                if current_section:
+                    current_content.append(line)
+                continue
+
+            # Check if this line is a header (## Header or **Header**)
+            header_match = _header_re.match(stripped) or _bold_re.match(stripped)
+            if header_match:
+                header_text = header_match.group(1) if _header_re.match(stripped) else header_match.group(1)
+                # For ## headers, group(2) is the actual text; for ** it's group(1)
+                m = _header_re.match(stripped)
+                header_text = m.group(2) if m else _bold_re.match(stripped).group(1)
+                header_lower = header_text.lower().strip()
+
+                matched_key: str | None = None
+                for section_key, markers in self.SECTION_MARKERS.items():
+                    if any(marker in header_lower for marker in markers):
+                        matched_key = section_key
+                        break
+
+                if matched_key:
                     if current_section:
                         sections[current_section] = "\n".join(current_content).strip()
-                    current_section = section_key
+                    current_section = matched_key
                     current_content = []
-                    matched = True
-                    break
-            if not matched and current_section:
-                current_content.append(line)
+                    continue
+                # It's a header but doesn't match a known section — treat as content
+                if current_section:
+                    current_content.append(line)
+            else:
+                if current_section:
+                    current_content.append(line)
 
         if current_section:
             sections[current_section] = "\n".join(current_content).strip()
@@ -84,23 +116,32 @@ class ExplanationGenerator:
         return sections
 
     def _extract_steps(self, text: str) -> list[dict]:
-        """Extract numbered steps from the output."""
-        import re
-        steps = []
-        pattern = r"(?:Step\s*(\d+)|(\d+)[\.\)])\s*[→:—-]*\s*(.*)"
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            step_num = match.group(1) or match.group(2)
-            content = match.group(3).strip()
-            steps.append({
-                "step": int(step_num),
-                "rule": "",
-                "explanation": content,
-            })
-        return steps if steps else [{"step": 1, "rule": "", "explanation": text.strip()}]
+        """
+        Extract numbered steps from the output.
+
+        Deduplicates by step number (last definition wins, since LLMs often
+        re-mention earlier steps in summaries). Filters out trivially short matches.
+        """
+        seen: dict[int, dict] = {}
+        # Match "Step N:" / "**Step N:**" / "Step N —" etc., capture the rest of the line
+        pattern = re.compile(
+            r"\*{0,2}Step\s*(\d+)[:\s*→—\-]+\*{0,2}\s*(.+?)(?=\n|$)",
+            re.IGNORECASE,
+        )
+        for match in pattern.finditer(text):
+            step_num = int(match.group(1))
+            content = match.group(2).strip().rstrip("*").strip()
+            # Skip malformed matches that are just punctuation/symbols
+            if len(content) < 4:
+                continue
+            seen[step_num] = {"step": step_num, "rule": "", "explanation": content}
+
+        if not seen:
+            return [{"step": 1, "rule": "", "explanation": text.strip()[:500]}]
+        return sorted(seen.values(), key=lambda s: s["step"])
 
     def _extract_latex(self, text: str) -> list[str]:
         """Extract LaTeX expressions ($..$ and $$..$$)."""
-        import re
         block = re.findall(r"\$\$(.*?)\$\$", text, re.DOTALL)
         inline = re.findall(r"(?<!\$)\$(.*?)\$(?!\$)", text)
         return block + inline

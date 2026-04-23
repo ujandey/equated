@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { trackEvent } from "@/lib/analytics";
 import { useChatStore } from "@/store/chatStore";
-import type { Message } from "@/types/message";
+import type { Message, SolutionMeta } from "@/types/message";
 
 const MAX_RETRIES = 3;
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
@@ -64,7 +64,7 @@ export function useChat() {
           ? { Authorization: `Bearer ${token}` }
           : {};
 
-        await handleStreamMode(content, userMsg, authHeaders);
+        await handleStreamMode(content, userMsg, authHeaders, sendStart);
       } catch (error) {
         const errDetail =
           error instanceof Error ? error.message : "Something went wrong";
@@ -95,6 +95,7 @@ export function useChat() {
     content: string,
     userMsg: Message,
     authHeaders: Record<string, string>,
+    sendStart: number,
   ) {
     const assistantId = crypto.randomUUID();
     addMessage({
@@ -151,6 +152,8 @@ export function useChat() {
     let contextReset = false;
     let verified: boolean | undefined;
     let verificationConfidence: "high" | "medium" | "low" | undefined;
+    let finalIntent: string | undefined;
+    let finalSolution: SolutionMeta | undefined;
 
     if (!reader) throw new Error("No response body available.");
 
@@ -192,6 +195,8 @@ export function useChat() {
                 | "medium"
                 | "low";
             }
+            if (event.intent) finalIntent = event.intent as string;
+            if (event.solution) finalSolution = event.solution as SolutionMeta;
             if (event.session_id) {
               useChatStore.getState().setSessionId(event.session_id);
             }
@@ -231,6 +236,8 @@ export function useChat() {
                 ...(finalDuration && { duration: finalDuration }),
                 ...(verified !== undefined && { verified }),
                 ...(verificationConfidence && { verificationConfidence }),
+                ...(finalIntent && { intent: finalIntent }),
+                ...(finalSolution && { solution: finalSolution }),
               },
             }
           : m,

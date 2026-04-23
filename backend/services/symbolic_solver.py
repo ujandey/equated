@@ -179,17 +179,18 @@ class SymbolicSolver:
         from ai.prompts import EXPLANATION_ONLY_SYSTEM_PROMPT
 
         result = solution.math_result
-        steps = "\n".join(result.steps) if result.steps else "No intermediate symbolic steps available."
+        # Format the answer cleanly — no raw SymPy syntax exposed to the LLM
+        raw = result.result
+        if isinstance(raw, list):
+            answer_str = ", ".join(str(r) for r in raw)
+        else:
+            answer_str = str(raw) if raw is not None else "See below"
+        latex_answer = result.latex_result or answer_str
         user_prompt = (
-            "Explain the solved math problem using the deterministic result below.\n\n"
-            f"Original problem: {query}\n"
-            f"Operation: {solution.request.operation}\n"
-            f"Parsed expression: {solution.request.expression}\n"
-            f"Verified result: {result.result}\n"
-            f"LaTeX result: {result.latex_result or result.result}\n"
-            f"Deterministic steps:\n{steps}\n\n"
-            "Do not change the equation, result, variable, or operation. "
-            "If the symbolic result is a list of solutions, explain that exact list."
+            f"Problem: {query}\n\n"
+            f"Verified answer: {latex_answer}\n\n"
+            "Explain this solution. Do not change the answer — treat it as ground truth.\n"
+            "If the answer is a list of solutions, explain all of them."
         )
         return [
             {"role": "system", "content": EXPLANATION_ONLY_SYSTEM_PROMPT},

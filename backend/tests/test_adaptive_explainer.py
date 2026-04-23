@@ -84,7 +84,7 @@ def test_generate_structured_explanation_uses_llm_and_parses_output(monkeypatch)
     monkeypatch.setattr("services.adaptive_explainer.get_model", lambda _provider: DummyModel())
     monkeypatch.setattr(service, "_select_provider", lambda: "openai")
 
-    explanation, level = asyncio.run(
+    explanation, level, _ = asyncio.run(
         service.generate_structured_explanation(
             problem="2 + 3",
             solution="5",

@@ -13,7 +13,7 @@ export default function ChatPage() {
       }}
     >
       <Sidebar />
-      <main className="flex-1 flex flex-col relative w-full md:ml-[180px] transition-all overflow-hidden">
+      <main className="flex-1 flex flex-col relative h-screen w-full md:ml-[180px] transition-all overflow-hidden">
         <ChatWindow />
       </main>
     </div>

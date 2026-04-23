@@ -81,6 +81,7 @@ async def test_unicode_normalization_solves_quadratic(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -136,6 +137,7 @@ async def test_follow_up_context_reuses_same_block(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -205,6 +207,7 @@ async def test_symbolic_first_enforcement_never_uses_llm_math(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -325,6 +328,7 @@ async def test_solve_and_explain_method_stays_in_single_flow(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -373,6 +377,7 @@ async def test_sequential_dependency_query_is_allowed(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -452,6 +457,7 @@ async def test_expression_bound_explanation_is_allowed(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -506,6 +512,7 @@ async def test_execution_modifier_requests_detailed_steps(monkeypatch):
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
@@ -594,6 +601,7 @@ async def test_scoped_modifiers_keep_solve_detailed_and_explanation_brief(monkey
                 common_mistakes=None,
             ),
             "intermediate",
+            "mock explanation text",
         )
 
     monkeypatch.setattr(master_controller, "_ensure_session", _session)
