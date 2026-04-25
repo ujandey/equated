@@ -18,6 +18,8 @@ from core.exceptions import AIServiceError, EquatedError
 from db.models import MultiQuestionResponse, QuestionOption, SolveRequest, SolveResponse
 from monitoring.metrics import SOLVES_TOTAL
 from monitoring.posthog_client import track
+from services.image_parser import LowConfidenceError, NoQuestionsError, parser_capabilities, route_and_parse
+from services.image_preprocessor import ImagePreprocessError
 from services.master_controller import master_controller
 from services.rate_limiter import user_rate_limiter
 from services.streaming_service import streaming_service
@@ -126,6 +128,7 @@ async def solve_problem(req: SolveRequest, request: Request):
     confidence_label = "high" if result.response.confidence >= 0.9 else "medium" if result.response.confidence >= 0.6 else "low"
     verification_status = "verified" if result.response.verified else "partial" if result.response.math_check_passed else "unverified"
     return SolveResponse(
+        session_id=result.session_id,
         problem_interpretation=result.response.problem_interpretation,
         concept_used=result.response.concept,
         concept_explanation=getattr(result.response, 'concept_explanation', ''),
@@ -181,13 +184,6 @@ async def solve_image(
         raise HTTPException(status_code=413, detail="Image too large. Max 10MB.")
 
     # ── Parse via OCR pipeline ──
-    from services.image_parser import (
-        LowConfidenceError,
-        NoQuestionsError,
-        route_and_parse,
-    )
-    from services.image_preprocessor import ImagePreprocessError
-
     try:
         parse_result = await route_and_parse(image_bytes)
     except ImagePreprocessError as exc:
@@ -211,8 +207,21 @@ async def solve_image(
             "error": "no_questions",
             "message": "No math questions found. Try a clearer photo.",
         })
+    except AIServiceError as exc:
+        logger.error(
+            "image_parse_unavailable",
+            error=str(exc),
+            user_id=user_id[:8],
+            parsers=parser_capabilities(),
+        )
+        raise HTTPException(status_code=503, detail=exc.message)
     except Exception as exc:
-        logger.error("image_parse_failed", error=str(exc), user_id=user_id[:8])
+        logger.error(
+            "image_parse_failed",
+            error=str(exc),
+            user_id=user_id[:8],
+            parsers=parser_capabilities(),
+        )
         raise HTTPException(
             status_code=503,
             detail="Image parsing unavailable. Type your question instead.",
@@ -244,6 +253,7 @@ async def solve_image(
         )
         img_verification_status = "verified" if result.response.verified else "partial" if result.response.math_check_passed else "unverified"
         return SolveResponse(
+            session_id=result.session_id,
             problem_interpretation=result.response.problem_interpretation,
             concept_used=result.response.concept,
             concept_explanation=getattr(result.response, 'concept_explanation', ''),
@@ -321,6 +331,7 @@ async def select_image_question(req: SelectQuestionRequest, request: Request):
     )
     sel_verification_status = "verified" if result.response.verified else "partial" if result.response.math_check_passed else "unverified"
     return SolveResponse(
+        session_id=result.session_id,
         problem_interpretation=result.response.problem_interpretation,
         concept_used=result.response.concept,
         concept_explanation=getattr(result.response, 'concept_explanation', ''),

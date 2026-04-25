@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 
 import structlog
 
+from config.settings import settings
+from core.exceptions import AIServiceError
 from services.image_preprocessor import ImagePreprocessError, preprocess_image
 
 logger = structlog.get_logger("equated.services.image_parser")
@@ -138,6 +140,11 @@ def _strip_json_fence(text: str) -> str:
 
 
 class BaseImageParser(ABC):
+    @classmethod
+    @abstractmethod
+    def is_available(cls) -> bool:
+        ...
+
     @abstractmethod
     async def parse(self, image_bytes: bytes, preprocessed_bytes: bytes) -> ParseResult:
         ...
@@ -216,11 +223,17 @@ _EXTRACTION_PROMPT_RETRY = (
 class GeminiVisionParser(BaseImageParser):
     _model = None
 
+    @classmethod
+    def is_available(cls) -> bool:
+        return bool(settings.GEMINI_API_KEY or os.getenv("GOOGLE_API_KEY"))
+
     def _get_model(self):
+        if not self.is_available():
+            raise RuntimeError("Gemini vision is not configured.")
         if GeminiVisionParser._model is None:
             import google.generativeai as genai
 
-            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
             genai.configure(api_key=api_key)
             GeminiVisionParser._model = genai.GenerativeModel("gemini-1.5-pro")
         return GeminiVisionParser._model
@@ -282,6 +295,14 @@ class GeminiVisionParser(BaseImageParser):
 class Pix2texParser(BaseImageParser):
     _model = None
 
+    @classmethod
+    def is_available(cls) -> bool:
+        try:
+            from pix2tex.cli import LatexOCR  # noqa: F401
+        except Exception:
+            return False
+        return True
+
     def _get_model(self):
         if Pix2texParser._model is None:
             from pix2tex.cli import LatexOCR
@@ -314,6 +335,16 @@ class Pix2texParser(BaseImageParser):
 
 
 class TesseractParser(BaseImageParser):
+    @classmethod
+    def is_available(cls) -> bool:
+        try:
+            import pytesseract
+
+            pytesseract.get_tesseract_version()
+        except Exception:
+            return False
+        return True
+
     async def parse(self, image_bytes: bytes, preprocessed_bytes: bytes) -> ParseResult:
         def _sync() -> tuple[str, float]:
             import pytesseract
@@ -368,6 +399,27 @@ _pix2tex = Pix2texParser()
 _tesseract = TesseractParser()
 
 
+def parser_capabilities() -> dict[str, bool]:
+    return {
+        "gemini": GeminiVisionParser.is_available(),
+        "pix2tex": Pix2texParser.is_available(),
+        "tesseract": TesseractParser.is_available(),
+    }
+
+
+def _available_local_parsers() -> list[BaseImageParser]:
+    parsers: list[BaseImageParser] = []
+    if TesseractParser.is_available():
+        parsers.append(_tesseract)
+    if Pix2texParser.is_available():
+        parsers.append(_pix2tex)
+    return parsers
+
+
+def _fallback_local_triage() -> _TriageResult:
+    return _TriageResult(type="printed_text", question_count=1, has_diagrams=False, confidence=0.3)
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 
@@ -381,28 +433,47 @@ async def route_and_parse(image_bytes: bytes) -> ParseResult:
         NoQuestionsError: No STEM questions detected.
         ImagePreprocessError: Preprocessing failed entirely.
     """
+    capabilities = parser_capabilities()
+    if not any(capabilities.values()):
+        raise AIServiceError(
+            "Image parsing is unavailable. Configure Gemini or install local OCR dependencies.",
+            provider="image_ocr",
+        )
+
     thumbnail_bytes = _resize_thumbnail(image_bytes, max_side=512)
 
-    try:
-        triage = await _gemini.triage(thumbnail_bytes)
-    except Exception as exc:
-        logger.error("triage_failed_defaulting_to_gemini_full", error=str(exc))
-        triage = _TriageResult(type="mixed", question_count=1, has_diagrams=False, confidence=0.5)
+    if capabilities["gemini"]:
+        try:
+            triage = await _gemini.triage(thumbnail_bytes)
+        except Exception as exc:
+            logger.error("triage_failed_defaulting_to_fallback", error=str(exc))
+            triage = _TriageResult(type="mixed", question_count=1, has_diagrams=False, confidence=0.5)
+    else:
+        triage = _fallback_local_triage()
 
     route_hint = "handwritten" if triage.type in {"handwritten", "mixed"} else "printed"
     preprocessed_bytes = preprocess_image(image_bytes, route_hint=route_hint)
 
     use_gemini_retry = False
-    if triage.type in {"handwritten", "mixed"} or triage.has_diagrams:
+    if capabilities["gemini"] and (triage.type in {"handwritten", "mixed"} or triage.has_diagrams):
         primary: BaseImageParser = _gemini
         fallback: BaseImageParser | None = None
         use_gemini_retry = True
-    elif triage.type == "printed_latex":
+    elif triage.type == "printed_latex" and capabilities["pix2tex"]:
         primary = _pix2tex
-        fallback = _gemini
+        fallback = _gemini if capabilities["gemini"] else _tesseract if capabilities["tesseract"] else None
     else:
-        primary = _tesseract
-        fallback = _gemini
+        local_parsers = _available_local_parsers()
+        if not local_parsers:
+            primary = _gemini
+            fallback = None
+        else:
+            primary = local_parsers[0]
+            fallback = None
+            if capabilities["gemini"]:
+                fallback = _gemini
+            elif len(local_parsers) > 1:
+                fallback = local_parsers[1]
 
     # Run primary engine
     result: ParseResult | None = None

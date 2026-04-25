@@ -3,8 +3,8 @@
  */
 
 export interface SolutionStep {
-  step: number;
-  rule: string;
+  step?: number;
+  rule?: string;
   explanation: string;
   // New structured fields
   number?: number;

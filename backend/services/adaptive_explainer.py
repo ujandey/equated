@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 import structlog
 
-from ai.models import get_model
+from ai.models import get_model, is_provider_available
 from config.settings import settings
 from services.explanation import StructuredExplanation, explanation_generator
 
@@ -451,6 +451,7 @@ class AdaptiveExplainerService:
             provider
             for provider in ordered
             if settings._is_set(provider_keys[provider])
+            and is_provider_available(provider)
         ]
 
     def _select_provider(self) -> str:

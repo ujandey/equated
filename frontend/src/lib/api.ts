@@ -84,6 +84,7 @@ export interface SolutionStepResponse {
 
 export interface SolveResponse {
   solve_id: string;
+  session_id?: string | null;
   problem_interpretation: string;
   concept_used: string;
   concept_explanation: string;

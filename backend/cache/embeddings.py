@@ -71,8 +71,8 @@ class EmbeddingGenerator:
             return data["data"][0]["embedding"]
 
         except (asyncio.TimeoutError, httpx.TimeoutException):
-            self._disabled_until_monotonic = time.monotonic() + 600
-            logger.warning("embedding_rate_limited", cooldown_seconds=600, model=self.MODEL, reason="timeout")
+            self._disabled_until_monotonic = time.monotonic() + 60
+            logger.warning("embedding_rate_limited", cooldown_seconds=60, model=self.MODEL, reason="timeout")
             return None
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:

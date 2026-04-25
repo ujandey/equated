@@ -1,15 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, FileImage, Upload, X } from "lucide-react";
-import { api, MultiQuestionResponse, QuestionOption } from "@/lib/api";
+import { Camera, Upload, X } from "lucide-react";
+import { api, MultiQuestionResponse, QuestionOption, SolveResponse } from "@/lib/api";
 import { QuestionSelector } from "./QuestionSelector";
 
 interface ImageUploadProps {
   onClose: () => void;
-  onSolveComplete: (result: any) => void;
+  onSolveComplete: (result: SolveResponse) => void;
   sessionId?: string;
-  userId?: string;
 }
 
 type UIState =
@@ -26,9 +25,16 @@ const LOADING_PHASES = [
 ];
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
+const ACCEPTED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".heic"];
 const MAX_MB = 10;
 
-export function ImageUpload({ onClose, onSolveComplete, sessionId, userId }: ImageUploadProps) {
+function isAcceptedImage(file: File): boolean {
+  if (ACCEPTED_TYPES.includes(file.type)) return true;
+  const lowerName = file.name.toLowerCase();
+  return ACCEPTED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+}
+
+export function ImageUpload({ onClose, onSolveComplete, sessionId }: ImageUploadProps) {
   const [state, setState] = useState<UIState>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,9 +55,14 @@ export function ImageUpload({ onClose, onSolveComplete, sessionId, userId }: Ima
     };
   }, [state.kind]);
 
+  useEffect(() => {
+    if (state.kind !== "preview") return;
+    return () => URL.revokeObjectURL(state.previewUrl);
+  }, [state]);
+
   const handleFile = useCallback((file: File) => {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      setState({ kind: "error", message: "Please upload a JPG, PNG, or WebP image." });
+    if (!isAcceptedImage(file)) {
+      setState({ kind: "error", message: "Please upload a JPG, PNG, WebP, or HEIC image." });
       return;
     }
     if (file.size > MAX_MB * 1024 * 1024) {
@@ -86,7 +97,7 @@ export function ImageUpload({ onClose, onSolveComplete, sessionId, userId }: Ima
       if (result.status === "multi_question") {
         setState({ kind: "multi", response: result as MultiQuestionResponse });
       } else {
-        onSolveComplete(result);
+        onSolveComplete(result as SolveResponse);
         onClose();
       }
     } catch (err: any) {
@@ -100,7 +111,7 @@ export function ImageUpload({ onClose, onSolveComplete, sessionId, userId }: Ima
       } else if (err?.status === 413) {
         setState({ kind: "error", message: `Image too large. Max ${MAX_MB}MB.` });
       } else if (err?.status === 415) {
-        setState({ kind: "error", message: "Please upload a JPG, PNG, or WebP image." });
+        setState({ kind: "error", message: "Please upload a JPG, PNG, WebP, or HEIC image." });
       } else {
         setState({
           kind: "error",
@@ -113,8 +124,8 @@ export function ImageUpload({ onClose, onSolveComplete, sessionId, userId }: Ima
   const handleQuestionSelected = async (questionId: string, questions: QuestionOption[]) => {
     setState({ kind: "loading", phase: 0 });
     try {
-      const result = await api.selectQuestion(questionId, questions, userId ?? "", sessionId);
-      onSolveComplete(result);
+      const result = await api.selectQuestion(questionId, questions, "", sessionId);
+      onSolveComplete(result as SolveResponse);
       onClose();
     } catch {
       setState({ kind: "error", message: "Something went wrong. Please try again." });

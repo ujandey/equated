@@ -18,7 +18,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from core.exceptions import AIServiceError
 from main import app
+from services import image_parser
 from services.image_parser import LowConfidenceError, NoQuestionsError, ParseResult
 from services.master_controller import ControllerResponse, ControllerResult, DecisionTrace
 
@@ -249,3 +251,38 @@ async def test_image_select_bad_id_returns_400():
         response = await client.post("/api/v1/solve/image/select", json=payload)
 
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_route_and_parse_raises_when_no_ocr_backend_available(monkeypatch):
+    monkeypatch.setattr(image_parser.GeminiVisionParser, "is_available", classmethod(lambda cls: False))
+    monkeypatch.setattr(image_parser.Pix2texParser, "is_available", classmethod(lambda cls: False))
+    monkeypatch.setattr(image_parser.TesseractParser, "is_available", classmethod(lambda cls: False))
+
+    with pytest.raises(AIServiceError):
+        await image_parser.route_and_parse(_minimal_png())
+
+
+@pytest.mark.asyncio
+async def test_route_and_parse_falls_back_to_local_tesseract_when_gemini_disabled(monkeypatch):
+    monkeypatch.setattr(image_parser.GeminiVisionParser, "is_available", classmethod(lambda cls: False))
+    monkeypatch.setattr(image_parser.Pix2texParser, "is_available", classmethod(lambda cls: False))
+    monkeypatch.setattr(image_parser.TesseractParser, "is_available", classmethod(lambda cls: True))
+    monkeypatch.setattr(image_parser, "preprocess_image", lambda image_bytes, route_hint="printed": image_bytes)
+
+    async def fake_tesseract_parse(self, image_bytes: bytes, preprocessed_bytes: bytes) -> ParseResult:
+        return ParseResult(
+            questions=["Solve x + 3 = 6"],
+            latex_versions=[""],
+            engine_used="tesseract",
+            confidence=0.91,
+            subject_hints=["algebra"],
+            raw_output="Solve x + 3 = 6",
+        )
+
+    monkeypatch.setattr(image_parser.TesseractParser, "parse", fake_tesseract_parse)
+
+    result = await image_parser.route_and_parse(_minimal_png())
+
+    assert result.engine_used == "tesseract"
+    assert result.questions == ["Solve x + 3 = 6"]

@@ -3,9 +3,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { useChat } from "@/hooks/useChat";
+import { useChatStore } from "@/store/chatStore";
 import { Header } from "@/components/layout/Header";
 import { ImageUpload } from "@/components/ImageUpload";
 import type { Message } from "@/types/message";
+import type { SolveResponse } from "@/lib/api";
 import {
   Sparkles, Send, Paperclip, Lightbulb, CheckCircle2,
   BookOpen, Book, AlertTriangle, LineChart
@@ -19,6 +21,9 @@ export function ChatWindow() {
   const wasLoadingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isLoading, sendMessage } = useChat();
+  const currentSessionId = useChatStore((state) => state.sessionId);
+  const addMessage = useChatStore((state) => state.addMessage);
+  const setSessionId = useChatStore((state) => state.setSessionId);
 
   // While streaming: keep latest content in view
   useEffect(() => {
@@ -63,10 +68,48 @@ export function ChatWindow() {
     return () => window.removeEventListener("equated:prefill", handler);
   }, []);
 
-  const handleImageSolveComplete = useCallback((_result: any) => {
-    // Image solve results are passed back as a solved response; the streaming
-    // rendering in useChat handles display — nothing extra needed here.
-  }, []);
+  const handleImageSolveComplete = useCallback((result: SolveResponse) => {
+    addMessage({
+      id: crypto.randomUUID(),
+      role: "user",
+      content: result.problem_interpretation?.trim() || "Question solved from uploaded image",
+      created_at: new Date().toISOString(),
+    });
+
+    addMessage({
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: result.quick_summary || result.final_answer || "",
+      created_at: new Date().toISOString(),
+      metadata: {
+        model: result.model_used,
+        verified: result.verified,
+        verificationConfidence:
+          result.verification_confidence === "high" ||
+          result.verification_confidence === "medium" ||
+          result.verification_confidence === "low"
+            ? result.verification_confidence
+            : undefined,
+        intent: "solve",
+        solution: {
+          problem_interpretation: result.problem_interpretation,
+          concept_used: result.concept_used,
+          concept_explanation: result.concept_explanation,
+          subject_hint: result.subject_hint,
+          quick_summary: result.quick_summary,
+          answer_summary: result.answer_summary,
+          final_answer: result.final_answer,
+          steps: result.steps,
+          verification_status: result.verification_status,
+          confidence: result.confidence,
+        },
+      },
+    });
+
+    if (result.session_id) {
+      setSessionId(result.session_id);
+    }
+  }, [addMessage, setSessionId]);
 
   return (
     <>
@@ -76,6 +119,7 @@ export function ChatWindow() {
         <ImageUpload
           onClose={() => setShowImageUpload(false)}
           onSolveComplete={handleImageSolveComplete}
+          sessionId={currentSessionId ?? undefined}
         />
       )}
       

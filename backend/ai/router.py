@@ -26,6 +26,7 @@ from dataclasses import dataclass
 import structlog
 
 from ai.classifier import Classification, SubjectCategory, ComplexityLevel
+from ai.models import is_provider_available
 from config.settings import settings
 from config.feature_flags import flags
 
@@ -282,11 +283,11 @@ class ModelRouter:
         raise RuntimeError("No AI providers available. Check API keys.")
 
     def _is_enabled(self, provider: ModelProvider) -> bool:
-        """Check if a provider has a valid API key configured."""
+        """Check if a provider has a valid API key configured and is not in cooldown."""
         config = MODEL_CONFIGS.get(provider)
         if not config:
             return False
-        return config["enabled"]()
+        return config["enabled"]() and is_provider_available(provider.value)
 
     def _estimate_cost(self, provider: str, output_tokens: int) -> float:
         """Rough cost estimate based on expected token usage."""

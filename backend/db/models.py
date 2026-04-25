@@ -39,6 +39,7 @@ class SolutionStep(BaseModel):
 class SolveResponse(BaseModel):
     """Structured solve response."""
     solve_id: str = Field(default_factory=lambda: str(uuid4()))
+    session_id: str | None = None
     problem_interpretation: str = ""
     concept_used: str = ""
     concept_explanation: str = ""

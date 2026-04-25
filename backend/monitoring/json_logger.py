@@ -64,6 +64,8 @@ def configure_json_logging():
         stream=sys.stdout,
         level=logging.INFO if settings.APP_ENV == "production" else logging.DEBUG,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def get_logger(name: str):

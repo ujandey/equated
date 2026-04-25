@@ -20,6 +20,7 @@ import structlog
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -61,6 +62,42 @@ class BaseModel(ABC):
 # ── Shared HTTP Client Pool ─────────────────────────
 # One persistent client per provider, reusing TCP connections.
 _shared_clients: dict[str, httpx.AsyncClient] = {}
+_provider_cooldowns: dict[str, datetime] = {}
+
+
+def mark_provider_temporarily_unavailable(provider: str, cooldown_seconds: int, reason: str) -> None:
+    """Temporarily suppress a provider after upstream rate-limit/billing failures."""
+    until = datetime.now(timezone.utc) + timedelta(seconds=cooldown_seconds)
+    previous = _provider_cooldowns.get(provider)
+    if previous is None or until > previous:
+        _provider_cooldowns[provider] = until
+    logger.warning(
+        "provider_temporarily_unavailable",
+        provider=provider,
+        cooldown_seconds=cooldown_seconds,
+        reason=reason,
+        unavailable_until=until.isoformat(),
+    )
+
+
+def is_provider_available(provider: str) -> bool:
+    """Return False while a provider is in temporary cooldown."""
+    until = _provider_cooldowns.get(provider)
+    if not until:
+        return True
+    if datetime.now(timezone.utc) >= until:
+        _provider_cooldowns.pop(provider, None)
+        return True
+    return False
+
+
+def get_provider_cooldown_remaining(provider: str) -> int:
+    """Number of seconds left in cooldown for this provider."""
+    until = _provider_cooldowns.get(provider)
+    if not until:
+        return 0
+    remaining = int((until - datetime.now(timezone.utc)).total_seconds())
+    return max(0, remaining)
 
 
 def _get_shared_client(provider: str, timeout: float = 60.0) -> httpx.AsyncClient:
@@ -103,26 +140,51 @@ class OpenAICompatibleModel(BaseModel):
         """Get the shared HTTP client for this provider."""
         return _get_shared_client(self.provider, self.timeout)
 
+    def _ensure_provider_available(self) -> None:
+        """Fail fast if this provider is already in a local cooldown window."""
+        if not is_provider_available(self.provider):
+            remaining = get_provider_cooldown_remaining(self.provider)
+            raise RuntimeError(
+                f"Provider {self.provider} temporarily unavailable due to recent upstream failure. "
+                f"Retry in about {remaining}s."
+            )
+
+    def _apply_failure_backoff(self, exc: Exception) -> None:
+        """Convert common upstream failures into short local cooldowns."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            if status == 402:
+                mark_provider_temporarily_unavailable(self.provider, 900, "payment_required")
+            elif status == 429:
+                mark_provider_temporarily_unavailable(self.provider, 600, "rate_limited")
+        elif isinstance(exc, httpx.TimeoutException):
+            mark_provider_temporarily_unavailable(self.provider, 180, "timeout")
+
     async def generate(self, messages: list[dict], max_tokens: int = 4096,
                        temperature: float = 0.3) -> ModelResponse:
         start = time.perf_counter()
+        self._ensure_provider_available()
 
-        client = self._get_client()
-        response = await client.post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.model_name,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
+        try:
+            client = self._get_client()
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            self._apply_failure_backoff(exc)
+            raise
 
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
         usage = data.get("usage", {})
@@ -153,35 +215,40 @@ class OpenAICompatibleModel(BaseModel):
 
     async def stream(self, messages: list[dict], max_tokens: int = 4096,
                      temperature: float = 0.3) -> AsyncIterator[str]:
+        self._ensure_provider_available()
         client = self._get_client()
-        async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    "stream": True,
-                },
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.startswith("data: ") and line != "data: [DONE]":
-                        try:
-                            chunk = json.loads(line.removeprefix("data: "))
-                            delta = chunk["choices"][0].get("delta", {})
-                            if content := delta.get("content"):
-                                yield content
-                        except (json.JSONDecodeError, KeyError, IndexError) as e:
-                            import logging
-                            log = logging.getLogger("equated.ai.models")
-                            log.warning(f"stream_parse_error: {type(e).__name__} at line: {line[:80]}")
-                            continue
+        try:
+            async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model_name,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "stream": True,
+                    },
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: ") and line != "data: [DONE]":
+                            try:
+                                chunk = json.loads(line.removeprefix("data: "))
+                                delta = chunk["choices"][0].get("delta", {})
+                                if content := delta.get("content"):
+                                    yield content
+                            except (json.JSONDecodeError, KeyError, IndexError) as e:
+                                import logging
+                                log = logging.getLogger("equated.ai.models")
+                                log.warning(f"stream_parse_error: {type(e).__name__} at line: {line[:80]}")
+                                continue
+        except Exception as exc:
+            self._apply_failure_backoff(exc)
+            raise
 
 
 # ══════════════════════════════════════════════════════
@@ -296,24 +363,40 @@ class GeminiModel(BaseModel):
                        temperature: float = 0.3) -> ModelResponse:
         """Call Gemini via the Google AI API (REST)."""
         start = time.perf_counter()
+        if not is_provider_available(self.provider):
+            remaining = get_provider_cooldown_remaining(self.provider)
+            raise RuntimeError(
+                f"Provider {self.provider} temporarily unavailable due to recent upstream failure. "
+                f"Retry in about {remaining}s."
+            )
 
         # Convert OpenAI message format to Gemini format
         contents = self._convert_messages(messages)
 
-        client = self._get_client()
-        response = await client.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent",
-            params={"key": self.api_key},
-            json={
-                "contents": contents,
-                "generationConfig": {
-                    "maxOutputTokens": max_tokens,
-                    "temperature": temperature,
+        try:
+            client = self._get_client()
+            response = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent",
+                params={"key": self.api_key},
+                json={
+                    "contents": contents,
+                    "generationConfig": {
+                        "maxOutputTokens": max_tokens,
+                        "temperature": temperature,
+                    },
                 },
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            if isinstance(exc, httpx.HTTPStatusError):
+                if exc.response.status_code == 429:
+                    mark_provider_temporarily_unavailable(self.provider, 600, "rate_limited")
+                elif exc.response.status_code == 402:
+                    mark_provider_temporarily_unavailable(self.provider, 900, "payment_required")
+            elif isinstance(exc, httpx.TimeoutException):
+                mark_provider_temporarily_unavailable(self.provider, 180, "timeout")
+            raise
 
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
 
@@ -353,34 +436,50 @@ class GeminiModel(BaseModel):
     async def stream(self, messages: list[dict], max_tokens: int = 4096,
                      temperature: float = 0.3) -> AsyncIterator[str]:
         """Stream from Gemini via the REST streaming endpoint."""
+        if not is_provider_available(self.provider):
+            remaining = get_provider_cooldown_remaining(self.provider)
+            raise RuntimeError(
+                f"Provider {self.provider} temporarily unavailable due to recent upstream failure. "
+                f"Retry in about {remaining}s."
+            )
         contents = self._convert_messages(messages)
 
         client = self._get_client()
-        async with client.stream(
-                "POST",
-                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent",
-                params={"key": self.api_key, "alt": "sse"},
-                json={
-                    "contents": contents,
-                    "generationConfig": {
-                        "maxOutputTokens": max_tokens,
-                        "temperature": temperature,
+        try:
+            async with client.stream(
+                    "POST",
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent",
+                    params={"key": self.api_key, "alt": "sse"},
+                    json={
+                        "contents": contents,
+                        "generationConfig": {
+                            "maxOutputTokens": max_tokens,
+                            "temperature": temperature,
+                        },
                     },
-                },
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        try:
-                            chunk = json.loads(line.removeprefix("data: "))
-                            candidates = chunk.get("candidates", [])
-                            if candidates:
-                                parts = candidates[0].get("content", {}).get("parts", [])
-                                for part in parts:
-                                    if text := part.get("text"):
-                                        yield text
-                        except (json.JSONDecodeError, KeyError, IndexError):
-                            continue
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            try:
+                                chunk = json.loads(line.removeprefix("data: "))
+                                candidates = chunk.get("candidates", [])
+                                if candidates:
+                                    parts = candidates[0].get("content", {}).get("parts", [])
+                                    for part in parts:
+                                        if text := part.get("text"):
+                                            yield text
+                            except (json.JSONDecodeError, KeyError, IndexError):
+                                continue
+        except Exception as exc:
+            if isinstance(exc, httpx.HTTPStatusError):
+                if exc.response.status_code == 429:
+                    mark_provider_temporarily_unavailable(self.provider, 600, "rate_limited")
+                elif exc.response.status_code == 402:
+                    mark_provider_temporarily_unavailable(self.provider, 900, "payment_required")
+            elif isinstance(exc, httpx.TimeoutException):
+                mark_provider_temporarily_unavailable(self.provider, 180, "timeout")
+            raise
 
     def _convert_messages(self, messages: list[dict]) -> list[dict]:
         """Convert OpenAI message format → Gemini contents format."""
